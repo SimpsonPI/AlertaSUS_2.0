@@ -8,7 +8,7 @@ import threading
 import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
-from datetime import time
+from datetime import time, datetime
 from zoneinfo import ZoneInfo
 import httpx
 from bs4 import BeautifulSoup
@@ -592,7 +592,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const currentChatId = document.getElementById('chat_id').value;
             if (!currentChatId) {
                 showStatus('Erro: ID do chat do Telegram não identificado. Acesse este formulário pelo bot.', false);
@@ -611,7 +611,9 @@ FORMULARIO_HTML = """<!DOCTYPE html>
                 email: document.getElementById('email').value.trim()
             };
 
-                   method: 'POST',
+            try {
+                const response = await fetch('/api/cadastrar', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
@@ -647,9 +649,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Desabilita logs repetitivos do servidor HTTP para manter o console limpo
-        returntry {
-                const response = await fetch('/api/cadastrar', {
-             
+        return
 
     def do_GET(self):
         parsed_path = urlparse(self.path)
@@ -715,6 +715,7 @@ def run_health_check():
 # ROTINA DE VERIFICAÇÃO AUTOMÁTICA (CRON)
 # ==========================================
 async def executar_varredura_regulacoes(bot_app):
+    bot = getattr(bot_app, "bot", bot_app)
     logging.info("🔍 Executando varredura agendada no portal da FMS Teresina...")
 
     try:
