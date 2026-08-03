@@ -8,13 +8,21 @@ import threading
 import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
-from datetime import time
+from datetime import time, datetime
 from zoneinfo import ZoneInfo
 import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import (
+    Update,
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 from telegram.helpers import escape_markdown
 from telegram.ext import (
     ApplicationBuilder,
@@ -584,7 +592,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const currentChatId = document.getElementById('chat_id').value;
             if (!currentChatId) {
                 showStatus('Erro: ID do chat do Telegram não identificado. Acesse este formulário pelo bot.', false);
@@ -707,6 +715,7 @@ def run_health_check():
 # ROTINA DE VERIFICAÇÃO AUTOMÁTICA (CRON)
 # ==========================================
 async def executar_varredura_regulacoes(bot_app):
+    bot = getattr(bot_app, "bot", bot_app)
     logging.info("🔍 Executando varredura agendada no portal da FMS Teresina...")
 
     try:
@@ -777,6 +786,47 @@ def obter_teclado_cadastro(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[btn]])
 
 
+def criar_menu_principal() -> ReplyKeyboardMarkup:
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+
+    btn_cadastrar = KeyboardButton("➕ Cadastrar Nova")
+    btn_todos = KeyboardButton("📋 Consultar Todos")
+    btn_especifico = KeyboardButton("🔍 Consultar Específico")
+    btn_corrigir = KeyboardButton("✏️ Corrigir ID")
+    btn_excluir = KeyboardButton("❌ Excluir Regulação")
+    btn_ajuda = KeyboardButton("ℹ️ Ajuda / Manual")
+
+    markup.add(btn_cadastrar)
+    markup.add(btn_todos, btn_especifico)
+    markup.add(btn_corrigir, btn_excluir)
+    markup.add(btn_ajuda)
+
+    return markup
+
+
+def gerar_botoes_ids(regulacoes, acao_prefixo: str) -> InlineKeyboardMarkup:
+    """
+    Gera botões inline dinamicamente com base nas regulações do usuário.
+    Exemplos:
+    - regulacoes: [{'id': '10829301', 'status': 'Pendente'}]
+    - acao_prefixo: 'cons', 'corr', 'exc'
+    """
+    markup = InlineKeyboardMarkup(row_width=1)
+
+    for reg in regulacoes:
+        reg_id = reg.get("id") or reg.get("numero_reg") or reg.get("numero")
+        status = reg.get("status") or reg.get("status_atual") or reg.get("status_anterior") or "Ativo"
+
+        if reg_id is None:
+            continue
+
+        texto_botao = f"ID: {reg_id} - Status: {status}"
+        callback_dado = f"{acao_prefixo}_{reg_id}"
+        markup.add(InlineKeyboardButton(texto_botao, callback_data=callback_dado))
+
+    return markup
+
+
 def obter_texto_instrucoes() -> str:
     return (
         "🤖 *MANUAL DE USO — ALERTASUS 2.0*\n\n"
@@ -796,20 +846,18 @@ def obter_texto_instrucoes() -> str:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     await update.message.reply_text(
         obter_texto_instrucoes(),
         parse_mode="Markdown",
-        reply_markup=obter_teclado_cadastro(chat_id)
+        reply_markup=criar_menu_principal()
     )
 
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     await update.message.reply_text(
         obter_texto_instrucoes(),
         parse_mode="Markdown",
-        reply_markup=obter_teclado_cadastro(chat_id)
+        reply_markup=criar_menu_principal()
     )
 
 
@@ -1039,7 +1087,49 @@ async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto = update.message.text.strip()
     chat_id = update.effective_chat.id
+
+    if texto == "➕ Cadastrar Nova":
+        await update.message.reply_text(
+            "📝 Clique no botão abaixo para abrir o **Formulário de Cadastro** e preencher os dados da regulação:",
+            parse_mode="Markdown",
+            reply_markup=obter_teclado_cadastro(chat_id)
+        )
+        return
+
+    if texto == "📋 Consultar Todos":
+        await comando_verificar_agora(update, context)
+        return
+
+    if texto == "🔍 Consultar Específico":
+        await update.message.reply_text(
+            "⚠️ Informe o ID da regulação para consultar um caso específico.\nExemplo: `/verificar 10829301`",
+            parse_mode="Markdown",
+            reply_markup=criar_menu_principal()
+        )
+        return
+
+    if texto == "✏️ Corrigir ID":
+        await update.message.reply_text(
+            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 10829245 10829301`",
+            parse_mode="Markdown",
+            reply_markup=criar_menu_principal()
+        )
+        return
+
+    if texto == "❌ Excluir Regulação":
+        await update.message.reply_text(
+            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 10829301`",
+            parse_mode="Markdown",
+            reply_markup=criar_menu_principal()
+        )
+        return
+
+    if texto == "ℹ️ Ajuda / Manual":
+        await comando_ajuda(update, context)
+        return
+
     await update.message.reply_text(
         "👋 Para cadastrar uma nova regulação, utilize o formulário abaixo:",
         reply_markup=obter_teclado_cadastro(chat_id)
