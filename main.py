@@ -603,9 +603,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
                 email: document.getElementById('email').value.trim()
             };
 
-            try {
-                const response = await fetch('/api/cadastrar', {
-                    method: 'POST',
+                   method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
@@ -641,7 +639,9 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Desabilita logs repetitivos do servidor HTTP para manter o console limpo
-        return
+        returntry {
+                const response = await fetch('/api/cadastrar', {
+             
 
     def do_GET(self):
         parsed_path = urlparse(self.path)
