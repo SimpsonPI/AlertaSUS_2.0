@@ -831,11 +831,12 @@ def gerar_botoes_ids(regulacoes, acao_prefixo: str) -> InlineKeyboardMarkup:
     return markup
 
 
-def obter_texto_instrucoes() -> str:
+def obter_texto_instrucoes():
     return (
-        "🤖 *MANUAL DE USO — ALERTASUS 2.0*\n\n"
-        "O AlertaSUS monitora suas solicitações de consultas e exames no portal da *FMS Teresina* "
-        "e notifica você automaticamente a cada alteração de status.\n\n"
+        "👋 **Olá! Seja muito bem-vindo(a) ao AlertaSUS 2.0!**\n\n"
+        "Estou aqui para facilitar a sua jornada e ajudar na gestão e consulta de regulações com rapidez e praticidade. 🩺✨\n\n"
+        "⚠️ *Aviso: Ferramenta particular e independente, sem vínculo com a FMS.*\n\n"
+        "👇 **Escolha abaixo o que você deseja fazer hoje utilizando os botões do nosso menu:**"
         "📌 *1. Cadastrar regulação*\n"
         "Acesse o nosso formulário web interativo utilizando o comando `/cadastrar`.\n\n"
         "📌 *2. Consultar status*\n"
