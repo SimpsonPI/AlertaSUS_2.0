@@ -784,14 +784,21 @@ def obter_teclado_cadastro(chat_id: int) -> InlineKeyboardMarkup:
 
 
 def criar_menu_principal() -> ReplyKeyboardMarkup:
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-
     btn_cadastrar = KeyboardButton("➕ Cadastrar Nova")
     btn_todos = KeyboardButton("📋 Consultar Todos")
     btn_especifico = KeyboardButton("🔍 Consultar Específico")
     btn_corrigir = KeyboardButton("✏️ Corrigir ID")
     btn_excluir = KeyboardButton("❌ Excluir Regulação")
     btn_ajuda = KeyboardButton("ℹ️ Ajuda / Manual")
+
+    keyboard = [
+        [btn_cadastrar, btn_todos],
+        [btn_especifico, btn_corrigir],
+        [btn_excluir, btn_ajuda]
+    ]
+    
+    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    return markup
 
     markup.add(btn_cadastrar)
     markup.add(btn_todos, btn_especifico)
