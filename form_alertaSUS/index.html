@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlertaSUS 2.0 — Ativar meus alertas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAF8F2;
+    --card:#FFFFFF;
+    --ink:#142B22;
+    --muted:#5C6B61;
+    --line:#E4E0D2;
+    --forest:#1E6B4A;
+    --forest-dark:#0F3F2C;
+    --forest-tint:#E7F2EC;
+    --gold:#F2B705;
+    --gold-dark:#B98600;
+    --gold-tint:#FCF1CE;
+    --danger:#C1443B;
+    --radius-lg:22px;
+    --radius-md:13px;
+    --radius-sm:8px;
+    --shadow:0 24px 48px -16px rgba(15,42,30,0.22);
+    --font-display:'Fraunces',Georgia,serif;
+    --font-body:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font-body);
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:28px 16px 60px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .page{
+    position:relative;
+    width:100%;
+    max-width:460px;
+  }
+
+  /* ---------- decorative alert waves ---------- */
+  .waves{
+    position:absolute;
+    top:-10px;
+    left:50%;
+    transform:translateX(-50%);
+    width:340px;
+    height:170px;
+    pointer-events:none;
+    z-index:0;
+  }
+  .waves svg{width:100%;height:100%;display:block;}
+  .waves circle{
+    fill:none;
+    stroke-width:1.4;
+    transform-origin:170px 170px;
+    animation:pulse 3.6s ease-in-out infinite;
+  }
+  .waves circle:nth-child(1){stroke:rgba(30,107,74,0.28); animation-delay:0s;}
+  .waves circle:nth-child(2){stroke:rgba(242,183,5,0.35); animation-delay:0.9s;}
+  .waves circle:nth-child(3){stroke:rgba(30,107,74,0.18); animation-delay:1.8s;}
+  @keyframes pulse{
+    0%{opacity:0.9; transform:scale(0.85);}
+    70%{opacity:0;}
+    100%{opacity:0; transform:scale(1.15);}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .waves circle{animation:none; opacity:0.5;}
+  }
+
+  /* ---------- card shell ---------- */
+  .card{
+    position:relative;
+    z-index:1;
+    background:var(--card);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+
+  .card-header{
+    position:relative;
+    padding:38px 28px 30px;
+    background:linear-gradient(155deg,var(--forest) 0%,var(--forest-dark) 100%);
+    text-align:center;
+    overflow:hidden;
+  }
+  .card-header::after{
+    content:"";
+    position:absolute;
+    right:-40px;
+    bottom:-60px;
+    width:180px;
+    height:180px;
+    background:var(--gold);
+    opacity:0.9;
+    clip-path:polygon(100% 0, 100% 100%, 0 100%);
+  }
+
+  .badge{
+    position:relative;
+    z-index:1;
+    width:64px;
+    height:64px;
+    margin:0 auto 16px;
+  }
+
+  .card-header h1{
+    position:relative;
+    z-index:1;
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:1.9rem;
+    letter-spacing:0.01em;
+    color:#fff;
+    margin:0 0 8px;
+  }
+  .tagline{
+    position:relative;
+    z-index:1;
+    margin:0;
+    color:rgba(255,255,255,0.86);
+    font-size:0.92rem;
+    line-height:1.5;
+    max-width:320px;
+    margin:0 auto;
+  }
+
+  .card-body{padding:28px 26px 8px;}
+
+  .intro{
+    font-size:0.93rem;
+    line-height:1.55;
+    color:var(--muted);
+    margin:0 0 24px;
+  }
+
+  /* ---------- fields ---------- */
+  .field{margin-bottom:20px;}
+  .field label{
+    display:block;
+    font-size:0.83rem;
+    font-weight:600;
+    color:var(--ink);
+    margin-bottom:7px;
+  }
+  .req{color:var(--gold-dark);}
+  .optional{
+    font-weight:400;
+    color:var(--muted);
+    font-size:0.78rem;
+  }
+
+  .input-wrap{
+    position:relative;
+    display:flex;
+    align-items:center;
+    border:1.5px solid var(--line);
+    border-radius:var(--radius-md);
+    background:#fff;
+    transition:border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .input-wrap svg{
+    flex:none;
+    margin-left:13px;
+    color:var(--muted);
+  }
+  .input-wrap input{
+    width:100%;
+    border:none;
+    outline:none;
+    background:transparent;
+    padding:12px 14px 12px 10px;
+    font-family:var(--font-body);
+    font-size:0.95rem;
+    color:var(--ink);
+  }
+  .input-wrap:focus-within{
+    border-color:var(--forest);
+    box-shadow:0 0 0 3px var(--forest-tint);
+  }
+
+  .help{
+    margin:7px 2px 0;
+    font-size:0.78rem;
+    color:var(--muted);
+    line-height:1.45;
+  }
+
+  /* ---------- ticket-style ID field ---------- */
+  .ticket-field .ticket-input{
+    position:relative;
+    display:flex;
+    align-items:center;
+    background:var(--forest-tint);
+    border:1.5px dashed var(--forest);
+    border-radius:var(--radius-md);
+  }
+  .ticket-field .ticket-input::before,
+  .ticket-field .ticket-input::after{
+    content:"";
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:16px;
+    height:16px;
+    background:var(--paper);
+    border-radius:50%;
+    border:1.5px dashed var(--forest);
+  }
+  .ticket-field .ticket-input::before{left:-9px;}
+  .ticket-field .ticket-input::after{right:-9px;}
+  .ticket-field svg{margin-left:14px;color:var(--forest);}
+  .ticket-field input{
+    font-family:var(--font-body);
+    font-variant-numeric:tabular-nums;
+    letter-spacing:0.06em;
+    font-weight:600;
+    padding:13px 16px 13px 10px;
+    background:transparent;
+    border:none;
+    outline:none;
+    width:100%;
+    color:var(--forest-dark);
+    font-size:1rem;
+  }
+  .ticket-field .ticket-input:focus-within{
+    box-shadow:0 0 0 3px rgba(30,107,74,0.18);
+  }
+
+  /* ---------- LGPD consent block ---------- */
+  .lgpd-box{
+    margin:26px 0 22px;
+    border:1.5px solid var(--line);
+    border-radius:var(--radius-md);
+    background:#FCFBF7;
+    overflow:hidden;
+  }
+  .lgpd-header{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:14px 16px 10px;
+  }
+  .lgpd-header svg{color:var(--forest); flex:none;}
+  .lgpd-header h2{
+    font-family:var(--font-body);
+    font-size:0.86rem;
+    font-weight:700;
+    color:var(--ink);
+    margin:0;
+    letter-spacing:0.01em;
+  }
+  .lgpd-text{
+    max-height:130px;
+    overflow-y:auto;
+    padding:0 16px 14px;
+    font-size:0.8rem;
+    line-height:1.6;
+    color:var(--muted);
+    border-bottom:1px solid var(--line);
+  }
+  .lgpd-text p{margin:0 0 10px;}
+  .lgpd-text p:last-child{margin-bottom:0;}
+  .lgpd-text::-webkit-scrollbar{width:6px;}
+  .lgpd-text::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px;}
+
+  .consent-check{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    padding:14px 16px;
+    cursor:pointer;
+    font-size:0.82rem;
+    line-height:1.5;
+    color:var(--ink);
+  }
+  .consent-check input{
+    flex:none;
+    width:18px;
+    height:18px;
+    margin-top:1px;
+    accent-color:var(--forest);
+    cursor:pointer;
+  }
+
+  /* ---------- submit ---------- */
+  button[type="submit"]{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    padding:14px 18px;
+    border:none;
+    border-radius:var(--radius-md);
+    background:var(--forest);
+    color:#fff;
+    font-family:var(--font-body);
+    font-weight:700;
+    font-size:0.98rem;
+    cursor:pointer;
+    transition:background 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+  }
+  button[type="submit"]:hover:not(:disabled){background:var(--forest-dark);}
+  button[type="submit"]:active:not(:disabled){transform:scale(0.985);}
+  button[type="submit"]:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
+  button[type="submit"]:disabled{
+    background:#CFD8D2;
+    cursor:not-allowed;
+  }
+  button[type="submit"] svg{flex:none;}
+
+  input:focus-visible{outline:none;}
+
+  .card-footer{
+    padding:18px 26px 26px;
+    text-align:center;
+  }
+  .card-footer p{
+    margin:0;
+    font-size:0.75rem;
+    color:var(--muted);
+  }
+
+  /* ---------- success panel ---------- */
+  .success-panel{
+    text-align:center;
+    padding:18px 6px 30px;
+  }
+  .success-panel .check-badge{
+    width:56px;
+    height:56px;
+    margin:0 auto 18px;
+    border-radius:50%;
+    background:var(--forest-tint);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .success-panel h2{
+    font-family:var(--font-display);
+    font-size:1.3rem;
+    font-weight:700;
+    margin:0 0 10px;
+    color:var(--ink);
+  }
+  .success-panel p{
+    font-size:0.88rem;
+    color:var(--muted);
+    line-height:1.6;
+    margin:0 0 18px;
+    max-width:320px;
+    margin-left:auto;
+    margin-right:auto;
+  }
+  .success-panel .id-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background:var(--gold-tint);
+    border:1.5px dashed var(--gold-dark);
+    border-radius:999px;
+    padding:8px 18px;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+    letter-spacing:0.05em;
+    color:var(--forest-dark);
+    font-size:0.92rem;
+  }
+
+  @media (max-width:380px){
+    .card-body{padding:24px 18px 6px;}
+    .card-header{padding:32px 20px 26px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <div class="waves" aria-hidden="true">
+    <svg viewBox="0 0 340 170">
+      <circle cx="170" cy="170" r="40"></circle>
+      <circle cx="170" cy="170" r="70"></circle>
+      <circle cx="170" cy="170" r="100"></circle>
+    </svg>
+  </div>
+
+  <main class="card">
+
+    <div class="card-header">
+      <div class="badge" aria-hidden="true">
+        <svg viewBox="0 0 64 64" width="64" height="64">
+          <defs>
+            <clipPath id="circleClip"><circle cx="32" cy="32" r="32"/></clipPath>
+          </defs>
+          <g clip-path="url(#circleClip)">
+            <rect width="64" height="64" fill="#1E6B4A"/>
+            <polygon points="64,0 64,64 0,64" fill="#F2B705"/>
+          </g>
+          <path d="M26 20h12v10h10v12H38v10H26V42H16V30h10z" fill="#fff"/>
+          <circle cx="46" cy="18" r="9" fill="none" stroke="#fff" stroke-width="2"/>
+          <path d="M46 13v5l3 3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h1>AlertaSUS 2.0</h1>
+      <p class="tagline">Receba avisos automáticos sobre sua fila do SUS, direto no seu Telegram.</p>
+    </div>
+
+    <div class="card-body">
+
+      <p class="intro">Preencha os dados abaixo para ativar os alertas da sua regulação. Assim que sua posição na fila mudar, avisamos você por aqui — sem precisar ficar consultando o sistema.</p>
+
+      <form id="alertaForm" novalidate>
+
+        <div class="field ticket-field">
+          <label for="idRegulacao">ID de Regulação <span class="req">*</span></label>
+          <div class="ticket-input">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/></svg>
+            <input type="text" id="idRegulacao" name="idRegulacao" inputmode="numeric" placeholder="Ex: 10829301" autocomplete="off" required aria-describedby="idRegulacaoHelp">
+          </div>
+          <p class="help" id="idRegulacaoHelp">Número que consta no seu comprovante de regulação do SUS.</p>
+        </div>
+
+        <div class="field">
+          <label for="nomeCompleto">Nome completo <span class="req">*</span></label>
+          <div class="input-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+            <input type="text" id="nomeCompleto" name="nomeCompleto" placeholder="Como está no seu comprovante" autocomplete="name" required>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="celular">Celular / WhatsApp <span class="req">*</span></label>
+          <div class="input-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v2a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.7A2 2 0 0 1 4.1 1h2a2 2 0 0 1 2 1.7c.1 1 .3 2 .7 3a2 2 0 0 1-.4 2.1L7.1 9.1a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c1 .4 2 .6 3 .7a2 2 0 0 1 1.5 2z"/></svg>
+            <input type="tel" id="celular" name="celular" placeholder="(86) 99999-9999" inputmode="numeric" autocomplete="tel" required aria-describedby="celularHelp">
+          </div>
+          <p class="help" id="celularHelp">É por aqui que enviaremos os alertas da sua fila.</p>
+        </div>
+
+        <div class="field">
+          <label for="email">E-mail <span class="optional">(opcional)</span></label>
+          <div class="input-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+            <input type="email" id="email" name="email" placeholder="seuemail@exemplo.com" autocomplete="email">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="nascimento">Data de nascimento <span class="req">*</span></label>
+          <div class="input-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>
+            <input type="date" id="nascimento" name="nascimento" autocomplete="bday" required>
+          </div>
+        </div>
+
+        <div class="lgpd-box">
+          <div class="lgpd-header">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.6 8 11 4.6-2.4 8-6 8-11V5z"/></svg>
+            <h2>Consentimento de uso de dados (LGPD)</h2>
+          </div>
+          <div class="lgpd-text">
+            <p>Ao continuar, você autoriza o Alerta SUS a coletar e utilizar os dados informados neste formulário exclusivamente para localizar sua regulação no sistema do SUS e enviar notificações sobre mudanças na fila de atendimento por Telegram.</p>
+            <p>Seus dados não serão vendidos nem compartilhados com terceiros para fins comerciais, e não serão usados para nenhuma finalidade além do acompanhamento da sua fila. Você pode pedir a exclusão dos seus dados a qualquer momento, conforme a Lei Geral de Proteção de Dados (Lei nº 13.709/2018).</p>
+            <p>O armazenamento é feito em ambiente seguro, com acesso restrito à equipe responsável pelo envio dos alertas.</p>
+          </div>
+          <label class="consent-check">
+            <input type="checkbox" id="consentimento" name="consentimento" required>
+            <span>Li e concordo com os termos acima e autorizo o uso dos meus dados para receber alertas sobre minha fila do SUS.</span>
+          </label>
+        </div>
+
+        <button type="submit" id="submitBtn" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          Ativar meus alertas
+        </button>
+
+      </form>
+
+      <div id="successPanel" class="success-panel" hidden tabindex="-1" aria-live="polite">
+        <div class="check-badge">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1E6B4A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <h2>Alertas ativados!</h2>
+        <p>Vamos avisar você por WhatsApp assim que houver novidades na sua fila. Guarde seu número de regulação:</p>
+        <div class="id-chip" id="successId">10829301</div>
+      </div>
+
+    </div>
+
+    <div class="card-footer">
+      <p>🔒 Seus dados são protegidos conforme a LGPD (Lei nº 13.709/2018).</p>
+    </div>
+
+  </main>
+</div>
+
+<script>
+(function(){
+  var form = document.getElementById('alertaForm');
+  var consent = document.getElementById('consentimento');
+  var submitBtn = document.getElementById('submitBtn');
+  var phone = document.getElementById('celular');
+  var idReg = document.getElementById('idRegulacao');
+  var successPanel = document.getElementById('successPanel');
+  var successId = document.getElementById('successId');
+
+  consent.addEventListener('change', function(){
+    submitBtn.disabled = !consent.checked;
+  });
+
+  phone.addEventListener('input', function(e){
+    var v = e.target.value.replace(/\D/g,'').slice(0,11);
+    if (v.length > 6){
+      v = v.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3');
+    } else if (v.length > 2){
+      v = v.replace(/(\d{2})(\d{0,5})/, '($1) $2');
+    } else if (v.length > 0){
+      v = v.replace(/(\d{0,2})/, '($1');
+    }
+    e.target.value = v;
+  });
+
+  idReg.addEventListener('input', function(e){
+    e.target.value = e.target.value.replace(/\D/g,'').slice(0,15);
+  });
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    if (!form.checkValidity()){
+      form.reportValidity();
+      return;
+    }
+
+    // Ponto de integração: envie os dados para o backend do chat SaaS aqui.
+    // Exemplo:
+    // fetch('/api/alerta-sus/cadastro', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(Object.fromEntries(new FormData(form)))
+    // });
+
+    successId.textContent = idReg.value;
+    form.hidden = true;
+    successPanel.hidden = false;
+    successPanel.focus();
+  });
+})();
+</script>
+
+</body>
+</html>

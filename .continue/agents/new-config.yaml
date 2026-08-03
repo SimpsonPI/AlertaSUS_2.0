@@ -1,0 +1,9 @@
+name: Groq Config
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Groq - Llama 3.3 70B
+    provider: groq
+    model: llama-3.3-70b-versatile
+    
