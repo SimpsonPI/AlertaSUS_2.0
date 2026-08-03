@@ -643,14 +643,11 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 </html>
 """
 
-
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Desabilita logs repetitivos do servidor HTTP para manter o console limpo
-        returntry {
-                const response = await fetch('/api/cadastrar', {
-             
-
+        return
+        
     def do_GET(self):
         parsed_path = urlparse(self.path)
 
