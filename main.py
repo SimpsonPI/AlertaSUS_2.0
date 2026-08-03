@@ -546,7 +546,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 
             <div class="form-group">
                 <label for="numero_reg">ID de Regulação <span class="required">*</span></label>
-                <input type="number" id="numero_reg" name="numero_reg" placeholder="Ex: 10829301" required>
+                <input type="number" id="numero_reg" name="numero_reg" placeholder="Ex: 12345678" required>
             </div>
 
             <div class="form-group">
@@ -812,7 +812,7 @@ def gerar_botoes_ids(regulacoes, acao_prefixo: str) -> InlineKeyboardMarkup:
     """
     Gera botões inline dinamicamente com base nas regulações do usuário.
     Exemplos:
-    - regulacoes: [{'id': '10829301', 'status': 'Pendente'}]
+    - regulacoes: [{'id': '12345678', 'status': 'Pendente'}]
     - acao_prefixo: 'cons', 'corr', 'exc'
     """
     markup = InlineKeyboardMarkup(row_width=1)
@@ -840,11 +840,11 @@ def obter_texto_instrucoes() -> str:
         "Acesse o nosso formulário web interativo utilizando o comando `/cadastrar`.\n\n"
         "📌 *2. Consultar status*\n"
         "• `/verificar` — consulta todas as suas regulações cadastradas\n"
-        "• `/verificar 10829301` — consulta instantânea de um ID específico\n\n"
+        "• `/verificar 12345678` — consulta instantânea de um ID específico\n\n"
         "📌 *3. Corrigir um ID*\n"
-        "• `/corrigir ID_ANTIGO ID_NOVO` (Ex: `/corrigir 10829245 10829301`)\n\n"
+        "• `/corrigir ID_ANTIGO ID_NOVO` (Ex: `/corrigir 12345678 12345689`)\n\n"
         "📌 *4. Excluir uma regulação*\n"
-        "• `/excluir 10829301`\n\n"
+        "• `/excluir 12345678`\n\n"
         "⏰ *Varreduras automáticas:* diariamente às *08:00* e *18:00* (horário de Teresina)."
     )
 
@@ -882,7 +882,7 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
 
         if not numero_reg:
             await update.message.reply_text(
-                "⚠️ Informe um número de regulação válido.\nExemplo: `/verificar 10829301`",
+                "⚠️ Informe um número de regulação válido.\nExemplo: `/verificar 12345678`",
                 parse_mode="Markdown"
             )
             return
@@ -986,7 +986,7 @@ async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
-            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 10829301`",
+            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 12345678`",
             parse_mode="Markdown"
         )
         return
@@ -1038,7 +1038,7 @@ async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) < 2:
         await update.message.reply_text(
-            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 10829245 10829301`",
+            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 12345678 12345689`",
             parse_mode="Markdown"
         )
         return
@@ -1108,7 +1108,7 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
 
     if texto == "🔍 Consultar Específico":
         await update.message.reply_text(
-            "⚠️ Informe o ID da regulação para consultar um caso específico.\nExemplo: `/verificar 10829301`",
+            "⚠️ Informe o ID da regulação para consultar um caso específico.\nExemplo: `/verificar 12345678`",
             parse_mode="Markdown",
             reply_markup=criar_menu_principal()
         )
@@ -1116,7 +1116,7 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
 
     if texto == "✏️ Corrigir ID":
         await update.message.reply_text(
-            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 10829245 10829301`",
+            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 12345678 12345689`",
             parse_mode="Markdown",
             reply_markup=criar_menu_principal()
         )
@@ -1124,7 +1124,7 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
 
     if texto == "❌ Excluir Regulação":
         await update.message.reply_text(
-            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 10829301`",
+            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 12345678`",
             parse_mode="Markdown",
             reply_markup=criar_menu_principal()
         )
