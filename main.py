@@ -1216,7 +1216,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
     
     # Handler para o botão do menu "Consultar Especifico"
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), Consultar Especifico))
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
