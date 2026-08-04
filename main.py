@@ -60,6 +60,8 @@ URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/in
 # --- FUNÇÕES AUXILIARES ---
 # --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
 
+# --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
+
 def formatar_data_br(data_str):
     """Converte datas de AAAA-MM-DD para DD/MM/AAAA"""
     if not data_str:
