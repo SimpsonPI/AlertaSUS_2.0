@@ -215,6 +215,8 @@ async def consultar_status_fms(numero_reg: str) -> dict:
 
 def nome_paciente_exibicao(nome: str | None) -> str:
     if not nome or not nome.strip() or nome.strip() == "Aguardando consulta":
+    def nome_paciente_exibicao(nome: str | None) -> str:
+    if not nome:
         return "Não informado"
     return nome.strip()
 
@@ -229,14 +231,22 @@ def montar_mensagem_regulacao(
 ) -> str:
     nome_esc = escape_markdown(nome_paciente_exibicao(nome_paciente), version=1)
     numero_esc = escape_markdown(numero_reg, version=1)
-    linhas = [titulo, "", f"👤 *Paciente:* *{nome_esc}*"]
+    
+    # Prepara e formata a data de nascimento e o e-mail
+    dt_exibicao = formatar_data_br(data_nascimento)
+    dt_esc = escape_markdown(dt_exibicao, version=1)
+    
+    email_txt = email.strip() if email else "Não informado"
+    email_esc = escape_markdown(email_txt, version=1)
 
-    ddt_exibicao = formatar_data_br(data_nascimento)
-dt_esc = escape_markdown(dt_exibicao, version=1)
-
-# Na f-string da mensagem, use a variável já tratada (dt_esc):
-f"🎂 *Data de Nascimento:* {dt_esc}\n"
-
+    # Adiciona as linhas organizadas dentro da lista:
+    linhas = [
+        titulo, 
+        "", 
+        f"👤 *Paciente:* *{nome_esc}*",
+        f"🎂 *Data de Nascimento:* {dt_esc}",
+        f"📧 *E-mail:* {email_esc}"
+    ]
     if email:
         email_esc = escape_markdown(email.strip(), version=1)
         linhas.append(f"📧 *E-mail:* *{email_esc}*")
