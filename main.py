@@ -1216,7 +1216,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), comando_verificar_agora))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
-    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_listar_todos)) 
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), consultar todos)) 
     
     # Excluir / Deletar
     app.add_handler(CommandHandler("excluir", comando_excluir))
