@@ -786,7 +786,7 @@ def obter_teclado_cadastro(chat_id: int) -> InlineKeyboardMarkup:
 def criar_menu_principal() -> ReplyKeyboardMarkup:
     btn_cadastrar = KeyboardButton("➕ Cadastrar Nova")
     btn_todos = KeyboardButton("📋 Consultar Todos")
-    btn_especifico = KeyboardButton("🔍 Consultar Específico")
+    btn_especifico = KeyboardButton("🔍 Consultar Especifico")
     btn_corrigir = KeyboardButton("✏️ Corrigir ID")
     btn_excluir = KeyboardButton("❌ Excluir Regulação")
     btn_ajuda = KeyboardButton("ℹ️ Ajuda / Manual")
@@ -841,7 +841,7 @@ def obter_texto_instrucoes():
         "Acesse o nosso formulário web interativo utilizando o comando `/cadastrar`.\n\n"
         "📌 *2. Consultar status*\n"
         "• `/verificar` — consulta todas as suas regulações cadastradas\n"
-        "• `/verificar 12345678` — consulta instantânea de um ID específico\n\n"
+        "• `/verificar 12345678` — consulta instantânea de um ID especifico\n\n"
         "📌 *3. Corrigir um ID*\n"
         "• `/corrigir ID_ANTIGO ID_NOVO` (Ex: `/corrigir 12345678 12345689`)\n\n"
         "📌 *4. Excluir uma regulação*\n"
@@ -855,7 +855,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(
         [
             [KeyboardButton("➕ Cadastrar Nova"), KeyboardButton("📋 Consultar Todos")],
-            [KeyboardButton("🔍 Consultar Específico"), KeyboardButton("✏️ Corrigir ID")],
+            [KeyboardButton("🔍 Consultar Especifico"), KeyboardButton("✏️ Corrigir ID")],
             [KeyboardButton("❌ Excluir Regulação"), KeyboardButton("ℹ️ Ajuda / Manual")]
         ],
         resize_keyboard=True
@@ -1117,9 +1117,9 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
         await comando_verificar_agora(update, context)
         return
 
-    if texto == "🔍 Consultar Específico":
+    if texto == "🔍 Consultar Especifico":
         await update.message.reply_text(
-            "⚠️ Informe o ID da regulação para consultar um caso específico.\nExemplo: `/verificar 12345678`",
+            "⚠️ Informe o ID da regulação para consultar um caso especifico.\nExemplo: `/verificar 12345678`",
             parse_mode="Markdown",
             reply_markup=criar_menu_principal()
         )
@@ -1213,10 +1213,10 @@ def main():
     
     # 1. Comandos de texto e botões do menu
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(CommandHandler("consultar", funcao_consulta_especifica))
+    app.add_handler(CommandHandler("consultar", funcao_consultar_especifico))
     
-    # Handler para o botão do menu "Consultar Específico"
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), consultar especifico))
+    # Handler para o botão do menu "Consultar Especifico"
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar especifico))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
