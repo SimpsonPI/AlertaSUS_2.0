@@ -230,51 +230,32 @@ def montar_mensagem_regulacao(
     titulo: str = "🏥 *SITUAÇÃO DA REGULAÇÃO*",
 ) -> str:
     nome_esc = escape_markdown(nome_paciente_exibicao(nome_paciente), version=1)
-    numero_esc = escape_markdown(numero_reg, version=1)
-    
-    # Prepara e formata a data de nascimento e o e-mail
+    numero_esc = escape_markdown(str(numero_reg), version=1)
+
     dt_exibicao = formatar_data_br(data_nascimento)
     dt_esc = escape_markdown(dt_exibicao, version=1)
-    
+
     email_txt = email.strip() if email else "Não informado"
     email_esc = escape_markdown(email_txt, version=1)
 
-    # Adiciona as linhas organizadas dentro da lista:
     linhas = [
-        titulo, 
-        "", 
+        titulo,
+        "",
         f"👤 *Paciente:* *{nome_esc}*",
         f"🎂 *Data de Nascimento:* {dt_esc}",
-        f"📧 *E-mail:* {email_esc}"
+        f"📧 *E-mail:* {email_esc}",
+        f"🆔 *ID de Regulação:* `{numero_esc}`",
     ]
-    if email:
-        email_esc = escape_markdown(email.strip(), version=1)
-        linhas.append(f"📧 *E-mail:* *{email_esc}*")
 
-    if resultado.get("encontrado", True):
-        linhas.append(f"🆔 *ID de Regulação:* `{numero_esc}`")
+    # Monta os status retornados do sistema/banco
+    if isinstance(resultado, dict):
+        status = resultado.get("status_resumido") or resultado.get("status_anterior") or "Não informado"
+        posicao = resultado.get("posicao_fila") or "Não informada"
+        previsao = resultado.get("previsao_atendimento") or "Não informada"
 
-        situacao = resultado.get("situacao")
-        if situacao:
-            linhas.append(f"📌 *Situação:* *{escape_markdown(situacao, version=1)}*")
-
-        alerta = resultado.get("alerta_fms")
-        if alerta:
-            linhas.append(f"🚨 *Aviso FMS:* _{escape_markdown(alerta, version=1)}_")
-
-        campos = resultado.get("campos", {})
-        for rotulo, valor in campos.items():
-            rotulo_lower = rotulo.lower()
-            if rotulo_lower in ["situação", "id de regulação"]:
-                continue
-            rot_esc = escape_markdown(str(rotulo), version=1)
-            val_esc = escape_markdown(str(valor), version=1)
-            linhas.append(f"• *{rot_esc}:* {val_esc}")
-    else:
-        linhas.extend([
-            f"🆔 *ID de Regulação:* `{numero_esc}`",
-            "Verifique se o ID ou número de regulação informado no comprovante está correto!",
-        ])
+        linhas.append(f"📌 *Situação:* {escape_markdown(str(status), version=1)}")
+        linhas.append(f"• *Posição da Fila:* {escape_markdown(str(posicao), version=1)}")
+        linhas.append(f"• *Previsão de atendimento:* {escape_markdown(str(previsao), version=1)}")
 
     return "\n".join(linhas)
 def validar_dados_cadastrais(
