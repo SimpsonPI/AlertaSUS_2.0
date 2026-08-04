@@ -225,11 +225,8 @@ async def consultar_status_fms(numero_reg: str) -> dict:
 
 def nome_paciente_exibicao(nome: str | None) -> str:
     if not nome or not nome.strip() or nome.strip() == "Aguardando consulta":
-    def nome_paciente_exibicao(nome: str | None) -> str:
-    if not nome:
         return "Não informado"
     return nome.strip()
-
 
 def montar_mensagem_regulacao(
     numero_reg: str,
