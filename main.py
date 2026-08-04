@@ -1213,7 +1213,7 @@ def main():
     
     # 1. Comandos de texto e botões do menu
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(CommandHandler("consultar", funcao_Consultar_Especifico))
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
     
     # Handler para o botão do menu "Consultar Especifico"
     app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), Consultar Especifico))
