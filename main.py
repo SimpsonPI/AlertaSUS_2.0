@@ -851,10 +851,20 @@ def obter_texto_instrucoes():
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Aqui você pega o seu menu criado pela função criar_menu_principal()
+    reply_markup = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("➕ Cadastrar Nova"), KeyboardButton("📋 Consultar Todos")],
+            [KeyboardButton("🔍 Consultar Específico"), KeyboardButton("✏️ Corrigir ID")],
+            [KeyboardButton("❌ Excluir Regulação"), KeyboardButton("ℹ️ Ajuda / Manual")]
+        ],
+        resize_keyboard=True
+    )
+    
+    # E envia a mensagem passando o reply_markup junto:
     await update.message.reply_text(
-        obter_texto_instrucoes(),
-        parse_mode="Markdown",
-        reply_markup=criar_menu_principal()
+        "Olá! Escolha uma das opções abaixo no menu:",
+        reply_markup=reply_markup
     )
 
 
