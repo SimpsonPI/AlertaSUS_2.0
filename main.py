@@ -1188,26 +1188,33 @@ def main():
     except RuntimeError:
         MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(MAIN_LOOP)
-    # Handlers
+    # ==========================================
+    # ==========================================
+    # HANDLERS (ATUALIZADOS COM OS TEXTOS EXATOS DO MENU)
+    # ==========================================
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda / Manual$"), comando_ajuda))
     
-    # Cadastrar (Aceita comando ou botão do menu)
+    # Cadastrar
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
-    app.add_handler(MessageHandler(filters.Regex("^📋 Cadastrar Regulação$"), comando_cadastrar)) # Ajuste o texto do botão se necessário
+    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
-    # Verificar / Consultar (Aceita comando ou botão do menu)
+    # Consultas (Verificar Específico)
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Status$"), comando_verificar_agora)) # Ajuste o texto do botão se necessário
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), comando_verificar_agora))
     
-    # Excluir / Deletar (Aceita comando ou botão do menu)
+    # Consultar Todos (Se você tiver uma função para isso, substitua "comando_verificar_agora" ou ajuste)
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora)) 
+    
+    # Excluir / Deletar
     app.add_handler(CommandHandler("excluir", comando_excluir))
     app.add_handler(CommandHandler("deletar", comando_excluir))
-    app.add_handler(MessageHandler(filters.Regex("^❌ Excluir Regulação$"), comando_excluir)) # Ajuste o texto do botão se necessário
+    app.add_handler(MessageHandler(filters.Regex("^❌ Excluir Regulação$"), comando_excluir))
     
-    # Corrigir (Aceita comando ou botão do menu)
+    # Corrigir
     app.add_handler(CommandHandler("corrigir", comando_corrigir))
-    app.add_handler(MessageHandler(filters.Regex("^✏️ Corrigir ID$"), comando_corrigir)) # Ajuste o texto do botão se necessário
+    app.add_handler(MessageHandler(filters.Regex("^✏️ Corrigir ID$"), comando_corrigir))
 
     # Mensagem padrão para outros textos livres
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_texto_padrao))
