@@ -22,6 +22,7 @@ from telegram import (
     WebAppInfo,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    ForceReply,  # <-- Adicionado aqui
 )
 from telegram.helpers import escape_markdown
 from telegram.ext import (
@@ -1114,30 +1115,50 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
 
     if texto == "🔍 Consultar Especifico":
         await update.message.reply_text(
-            "⚠️ Informe o ID da regulação para consultar um caso especifico.\nExemplo: `/verificar 12345678`",
-            parse_mode="Markdown",
-            reply_markup=criar_menu_principal()
+            "👇 Digite apenas o número do ID de regulação que deseja consultar:",
+            reply_markup=ForceReply(selective=True)
         )
         return
 
     if texto == "✏️ Corrigir ID":
         await update.message.reply_text(
-            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 12345678 12345689`",
-            parse_mode="Markdown",
-            reply_markup=criar_menu_principal()
+            "👇 Digite o ID antigo e o novo ID separados por espaço (Exemplo: 12345678 87654321):",
+            reply_markup=ForceReply(selective=True)
         )
         return
 
     if texto == "❌ Excluir Regulação":
         await update.message.reply_text(
-            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 12345678`",
-            parse_mode="Markdown",
-            reply_markup=criar_menu_principal()
+            "👇 Digite apenas o número do ID de regulação que deseja excluir:",
+            reply_markup=ForceReply(selective=True)
         )
         return
 
     if texto == "ℹ️ Ajuda / Manual":
         await comando_ajuda(update, context)
+        return
+
+    # --- RECONHECIMENTO AUTOMÁTICO DE RESPOSTAS E NÚMEROS DE ID ---
+    # Se o usuário respondeu à mensagem de solicitação do bot
+    if update.message.reply_to_message:
+        prompt = update.message.reply_to_message.text.lower()
+        if "excluir" in prompt:
+            context.args = texto.split()
+            await comando_excluir(update, context)
+            return
+        elif "corrigir" in prompt:
+            context.args = texto.split()
+            await comando_corrigir(update, context)
+            return
+        elif "consultar" in prompt:
+            context.args = texto.split()
+            await comando_verificar_agora(update, context)
+            return
+
+    # Se o usuário digitou diretamente apenas números no chat (ex: 12345678)
+    if texto.isdigit():
+        context.args = [texto]
+        await comando_verificar_agora(update, context)
         return
 
     await update.message.reply_text(
