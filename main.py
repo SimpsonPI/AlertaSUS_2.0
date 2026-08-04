@@ -57,7 +57,18 @@ FUSO_HORARIO = ZoneInfo("America/Fortaleza")
 
 # Endpoint oficial de busca da FMS Teresina
 URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index"
-
+# --- FUNÇÕES AUXILIARES ---
+def formatar_data_br(data_str):
+    """Converte datas de AAAA-MM-DD para DD/MM/AAAA"""
+    if not data_str:
+        return "Não informada"
+    
+    if isinstance(data_str, str) and "-" in data_str:
+        partes = data_str.split("-")
+        if len(partes) == 3:
+            return f"{partes[2]}/{partes[1]}/{partes[0]}"
+            
+    return data_str
 # Referências Globais para comunicação entre Threads (Servidor Web <-> Telegram Bot)
 BOT_APP = None
 MAIN_LOOP = None
@@ -220,9 +231,11 @@ def montar_mensagem_regulacao(
     numero_esc = escape_markdown(numero_reg, version=1)
     linhas = [titulo, "", f"👤 *Paciente:* *{nome_esc}*"]
 
-    dt_exibicao = data_nascimento.strip() if data_nascimento else "Não informada"
-    dt_esc = escape_markdown(dt_exibicao, version=1)
-    linhas.append(f"🎂 *Data de Nascimento:* *{dt_esc}*")
+    ddt_exibicao = formatar_data_br(data_nascimento)
+dt_esc = escape_markdown(dt_exibicao, version=1)
+
+# Na f-string da mensagem, use a variável já tratada (dt_esc):
+f"🎂 *Data de Nascimento:* {dt_esc}\n"
 
     if email:
         email_esc = escape_markdown(email.strip(), version=1)
