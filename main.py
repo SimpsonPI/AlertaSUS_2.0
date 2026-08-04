@@ -1213,10 +1213,10 @@ def main():
     
     # 1. Comandos de texto e botões do menu
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(CommandHandler("consultar", funcao_consultar_especifico))
+    app.add_handler(CommandHandler("consultar", funcao_Consultar_Especifico))
     
     # Handler para o botão do menu "Consultar Especifico"
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar especifico))
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), Consultar Especifico))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
