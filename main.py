@@ -1206,17 +1206,9 @@ def main():
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
     app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
-    # 1. Comandos de texto e botões do menu
-    # 1. Comandos de texto e botões do menu
-    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    
-    # O botão "Consultar Especifico" já é tratado automaticamente pela função mensagem_texto_padrao abaixo.
-    
-    # 2. Consultar Todos
+
     app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora))
     
-    # Handler para o botão do menu "Consultar Especifico"
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
