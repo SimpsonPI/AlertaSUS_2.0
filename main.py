@@ -58,18 +58,26 @@ FUSO_HORARIO = ZoneInfo("America/Fortaleza")
 # Endpoint oficial de busca da FMS Teresina
 URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index"
 # --- FUNÇÕES AUXILIARES ---
+# --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
+
 def formatar_data_br(data_str):
     """Converte datas de AAAA-MM-DD para DD/MM/AAAA"""
     if not data_str:
         return "Não informada"
     
-    if isinstance(data_str, str) and "-" in data_str:
-        partes = data_str.split("-")
+    data_limpa = str(data_str).split("T")[0].strip()
+    if "-" in data_limpa:
+        partes = data_limpa.split("-")
         if len(partes) == 3:
             return f"{partes[2]}/{partes[1]}/{partes[0]}"
             
-    return data_str
-# Referências Globais para comunicação entre Threads (Servidor Web <-> Telegram Bot)
+    return data_limpa
+
+
+def nome_paciente_exibicao(nome: str | None) -> str:
+    if not nome:
+        return "Não informado"
+    return nome.strip()
 BOT_APP = None
 MAIN_LOOP = None
 
