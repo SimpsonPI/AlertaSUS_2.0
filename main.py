@@ -611,7 +611,9 @@ FORMULARIO_HTML = """<!DOCTYPE html>
                 email: document.getElementById('email').value.trim()
             };
 
-                   method: 'POST',
+            try {
+                const response = await fetch('/api/cadastrar', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
@@ -798,13 +800,6 @@ def criar_menu_principal() -> ReplyKeyboardMarkup:
     ]
     
     markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    return markup
-
-    markup.add(btn_cadastrar)
-    markup.add(btn_todos, btn_especifico)
-    markup.add(btn_corrigir, btn_excluir)
-    markup.add(btn_ajuda)
-
     return markup
 
 
@@ -1212,11 +1207,16 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
     # 1. Comandos de texto e botões do menu
+    # 1. Comandos de texto e botões do menu
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
+    
+    # O botão "Consultar Especifico" já é tratado automaticamente pela função mensagem_texto_padrao abaixo.
+    
+    # 2. Consultar Todos
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora))
     
     # Handler para o botão do menu "Consultar Especifico"
-    
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Especifico$"), consultar_especifico))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
