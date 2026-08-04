@@ -1191,11 +1191,25 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    
+    # Cadastrar (Aceita comando ou botão do menu)
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Cadastrar Regulação$"), comando_cadastrar)) # Ajuste o texto do botão se necessário
+    
+    # Verificar / Consultar (Aceita comando ou botão do menu)
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Status$"), comando_verificar_agora)) # Ajuste o texto do botão se necessário
+    
+    # Excluir / Deletar (Aceita comando ou botão do menu)
     app.add_handler(CommandHandler("excluir", comando_excluir))
     app.add_handler(CommandHandler("deletar", comando_excluir))
+    app.add_handler(MessageHandler(filters.Regex("^❌ Excluir Regulação$"), comando_excluir)) # Ajuste o texto do botão se necessário
+    
+    # Corrigir (Aceita comando ou botão do menu)
     app.add_handler(CommandHandler("corrigir", comando_corrigir))
+    app.add_handler(MessageHandler(filters.Regex("^✏️ Corrigir ID$"), comando_corrigir)) # Ajuste o texto do botão se necessário
+
+    # Mensagem padrão para outros textos livres
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_texto_padrao))
 
     # Agendamento diário (08:00 e 18:00 no fuso de Teresina)
