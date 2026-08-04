@@ -1211,9 +1211,12 @@ def main():
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
     app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
-    # 1. Consulta Específica (Deve chamar a função que pede o ID específico)
+    # 1. Comandos de texto e botões do menu
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), comando_verificar_agora))
+    app.add_handler(CommandHandler("consultar", funcao_consulta_especifica))
+    
+    # Handler para o botão do menu "Consultar Específico"
+    app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), funcao_consulta_especifica))
     
     # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
