@@ -1190,7 +1190,8 @@ def main():
         asyncio.set_event_loop(MAIN_LOOP)
     # ==========================================
     # ==========================================
-    # HANDLERS (ATUALIZADOS COM OS TEXTOS EXATOS DO MENU)
+    # ==========================================
+    # HANDLERS (CORRIGIDO)
     # ==========================================
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
@@ -1200,12 +1201,12 @@ def main():
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
     app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
-    # Consultas (Verificar Específico)
+    # 1. Consulta Específica (Deve chamar a função que pede o ID específico)
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
     app.add_handler(MessageHandler(filters.Regex("^🔍 Consultar Específico$"), comando_verificar_agora))
     
-    # Consultar Todos (Se você tiver uma função para isso, substitua "comando_verificar_agora" ou ajuste)
-    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora)) 
+    # 2. Consultar Todos (Substitua 'comando_listar_todos' pelo nome real da função que mostra todos os IDs)
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_listar_todos)) 
     
     # Excluir / Deletar
     app.add_handler(CommandHandler("excluir", comando_excluir))
