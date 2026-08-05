@@ -804,6 +804,9 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ==========================================
+# COMANDO: VERIFICAR
+# ==========================================
 async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
@@ -870,13 +873,11 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("⏳ Consultando suas regulações no portal da FMS...")
 
         try:
-            # 1. Tenta buscar pelo chat_id como String
             resposta = await asyncio.to_thread(
                 lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", str(chat_id)).execute()
             )
             regulacoes = resposta.data
 
-            # 2. Se não encontrar, tenta buscar pelo chat_id como Integer
             if not regulacoes:
                 resposta = await asyncio.to_thread(
                     lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int(chat_id)).execute()
@@ -933,161 +934,87 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
             logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
             await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
 
-async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+# ==========================================
+# COMANDO: EXCLUIR
+# ==========================================
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
-    if len(context.args) < 2:
+    if not context.args:
         await update.message.reply_text(
-            "⚠️ Informe o ID antigo e o novo ID.\nExemplo: `/corrigir 12345678 12345689`",
+            "⚠️ *Como excluir uma regulação:*\n\nDigite o comando acompanhado do número da regulação.\nExemplo: `/excluir 12345678`",
             parse_mode="Markdown"
         )
         return
 
-    numero_antigo = "".join(re.findall(r'\d+', context.args[0]))
-    numero_novo = "".join(re.findall(r'\d+', context.args[1]))
+    numero_reg = "".join(re.findall(r'\d+', context.args[0]))
 
-    if not numero_antigo or not numero_novo:
-        await update.message.reply_text("⚠️ Informe números de regulação válidos.")
+    if not numero_reg:
+        await update.message.reply_text("⚠️ Número de regulação inválido.")
         return
 
     try:
         resposta = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0")
-            .select("*")
-            .eq("chat_id", chat_id)
-            .eq("numero_reg", numero_antigo)
+            .delete()
+            .eq("chat_id", str(chat_id))
+            .eq("numero_reg", str(numero_reg))
             .execute()
         )
-
-        antigo_esc = escape_markdown(numero_antigo, version=1)
-        novo_esc = escape_markdown(numero_novo, version=1)
 
         if not resposta.data:
+            resposta = await asyncio.to_thread(
+                lambda: supabase.table("AlertaSUS_2.0")
+                .delete()
+                .eq("chat_id", int(chat_id))
+                .eq("numero_reg", str(numero_reg))
+                .execute()
+            )
+
+        reg_esc = escape_markdown(numero_reg, version=1)
+
+        if resposta.data:
             await update.message.reply_text(
-                f"🔍 O ID antigo `{antigo_esc}` não foi encontrado nos seus cadastros.",
+                f"✅ Regulação `{reg_esc}` excluída com sucesso!",
                 parse_mode="Markdown"
             )
-            return
-
-        await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0")
-            .update({
-                "numero_reg": numero_novo,
-                "status_anterior": "Pendente"
-            })
-            .eq("chat_id", chat_id)
-            .eq("numero_reg", numero_antigo)
-            .execute()
-        )
-
-        await update.message.reply_text(
-            f"✏️ Regulação alterada de `{antigo_esc}` para `{novo_esc}` com sucesso!",
-            parse_mode="Markdown"
-        )
+        else:
+            await update.message.reply_text(
+                f"⚠️ Regulação `{reg_esc}` não foi encontrada no seu cadastro.",
+                parse_mode="Markdown"
+            )
 
     except Exception as e:
-        logging.error(f"Erro ao corrigir regulação: {e}")
-        await update.message.reply_text("❌ Ocorreu um erro ao atualizar a regulação no banco de dados.")
-
-
-async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text.strip()
-    chat_id = update.effective_chat.id
-
-    if texto == "➕ Cadastrar Nova":
-        await update.message.reply_text(
-            "📝 Clique no botão abaixo para abrir o **Formulário de Cadastro** e preencher os dados da regulação:",
-            parse_mode="Markdown",
-            reply_markup=obter_teclado_cadastro(chat_id)
-        )
-        return
-
-    if texto == "📋 Consultar Todos":
-        await comando_verificar_agora(update, context)
-        return
-
-    if texto == "🔍 Consultar Especifico":
-        await update.message.reply_text(
-            "👇 Digite apenas o número do ID de regulação que deseja consultar:",
-            reply_markup=ForceReply(selective=True)
-        )
-        return
-
-    if texto == "✏️ Corrigir ID":
-        await update.message.reply_text(
-            "👇 Digite o ID antigo e o novo ID separados por espaço (Exemplo: 12345678 87654321):",
-            reply_markup=ForceReply(selective=True)
-        )
-        return
-
-    if texto == "❌ Excluir Regulação":
-        await update.message.reply_text(
-            "👇 Digite apenas o número do ID de regulação que deseja excluir:",
-            reply_markup=ForceReply(selective=True)
-        )
-        return
-
-    if texto == "ℹ️ Ajuda / Manual":
-        await comando_ajuda(update, context)
-        return
-
-    if update.message.reply_to_message:
-        prompt = update.message.reply_to_message.text.lower()
-        if "excluir" in prompt:
-            context.args = texto.split()
-            await comando_excluir(update, context)
-            return
-        elif "corrigir" in prompt:
-            context.args = texto.split()
-            await comando_corrigir(update, context)
-            return
-        elif "consultar" in prompt:
-            context.args = texto.split()
-            await comando_verificar_agora(update, context)
-            return
-
-    if texto.isdigit():
-        context.args = [texto]
-        await comando_verificar_agora(update, context)
-        return
-
-    await update.message.reply_text(
-        "👋 Para cadastrar uma nova regulação, utilize o formulário abaixo:",
-        reply_markup=obter_teclado_cadastro(chat_id)
-    )
+        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
 
 
 # ==========================================
-# CONFIGURAÇÃO DOS COMANDOS NO TELEGRAM
-# ==========================================
-async def configurar_menu_comandos(application):
-    bot = application.bot
-
-    comandos = [
-        BotCommand("start", "Inicia o bot e exibe o manual completo"),
-        BotCommand("cadastrar", "Abre o formulário de cadastro"),
-        BotCommand("verificar", "Consulta posição na fila e previsão"),
-        BotCommand("corrigir", "Altera um ID de regulação cadastrado"),
-        BotCommand("excluir", "Remove uma regulação do monitoramento"),
-        BotCommand("ajuda", "Exibe as orientações de uso"),
-    ]
-    await bot.set_my_commands(comandos)
-
-    await bot.set_my_short_description(
-        "Monitoramento de solicitações e consultas da FMS Teresina.",
-        language_code="pt",
-    )
-    await bot.set_my_description(
-        "AlertaSUS 2.0 acompanha solicitações de consultas e exames no portal da FMS Teresina.\n\n"
-        "Cadastre o número de regulação para receber notificações automáticas sobre alterações na fila e no agendamento.",
-        language_code="pt",
-    )
-
-
-# ==========================================
-# INICIALIZAÇÃO DO BOT
+# FUNÇÃO PRINCIPAL MAIN
 # ==========================================
 def main():
+    global BOT_APP, MAIN_LOOP
+
+    print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
+
+    threading.Thread(target=run_health_check, daemon=True).start()
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
+    BOT_APP = app
+
+    app.add_handler(CommandHandler("start", comando_start))
+    app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
+    app.add_handler(CommandHandler("excluir", comando_excluir))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_mensagem_texto))
+
+    MAIN_LOOP = asyncio.get_event_loop()
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()
     global BOT_APP, MAIN_LOOP
 
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
