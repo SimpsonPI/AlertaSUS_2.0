@@ -46,7 +46,8 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 APP_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 
 if not TELEGRAM_BOT_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
+    raise ValueError(
+        "Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -68,13 +69,13 @@ def formatar_data_br(data_str):
     """Converte datas de AAAA-MM-DD para DD/MM/AAAA"""
     if not data_str:
         return "Não informada"
-    
+
     data_limpa = str(data_str).split("T")[0].strip()
     if "-" in data_limpa:
         partes = data_limpa.split("-")
         if len(partes) == 3:
             return f"{partes[2]}/{partes[1]}/{partes[0]}"
-            
+
     return data_limpa
 
 
@@ -105,8 +106,11 @@ async def consultar_status_fms(numero_reg: str) -> dict:
     SCRAPER_KEY = os.getenv("SCRAPER_KEY")
 
     if not SCRAPER_KEY:
-        logging.error("A variável de ambiente SCRAPER_KEY não foi configurada.")
-        return {"sucesso": False, "mensagem": "Erro de configuração no servidor."}
+        logging.error(
+            "A variável de ambiente SCRAPER_KEY não foi configurada.")
+        return {
+            "sucesso": False,
+            "mensagem": "Erro de configuração no servidor."}
 
     url_fms_target = f"{URL_BUSCA_FMS}?number_id={numero_reg}"
     scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}&country_code=br"
@@ -116,8 +120,13 @@ async def consultar_status_fms(numero_reg: str) -> dict:
             resposta = await client.get(scraper_url)
 
             if resposta.status_code != 200:
-                logging.error(f"Erro HTTP {resposta.status_code} na ScraperAPI.")
-                return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
+                logging.error(
+                    f"Erro HTTP {
+                        resposta.status_code} na ScraperAPI.")
+                return {
+                    "sucesso": False,
+                    "mensagem": f"Erro HTTP {
+                        resposta.status_code}"}
 
             soup = BeautifulSoup(resposta.text, "html.parser")
 
@@ -131,11 +140,11 @@ async def consultar_status_fms(numero_reg: str) -> dict:
             try:
                 tabela = soup.find("table")
                 if not tabela:
-                    logging.warning(f"Tabela não encontrada no HTML para a regulação {numero_reg}.")
+                    logging.warning(
+                        f"Tabela não encontrada no HTML para a regulação {numero_reg}.")
                     return {
-                        "sucesso": False, 
-                        "mensagem": "⚠️ Não foi possível extrair a tabela de dados da FMS."
-                    }
+                        "sucesso": False,
+                        "mensagem": "⚠️ Não foi possível extrair a tabela de dados da FMS."}
             except (AttributeError, IndexError) as err:
                 logging.error(f"Erro ao ler estrutura da tabela: {err}")
                 return {
@@ -155,7 +164,15 @@ async def consultar_status_fms(numero_reg: str) -> dict:
 
             card = soup.find("div", class_="card-body") or soup
 
-            alertas = [re.sub(r"\s+", " ", a.get_text(" ", strip=True)) for a in card.find_all("div", class_=re.compile(r"alert"))]
+            alertas = [
+                re.sub(
+                    r"\s+",
+                    " ",
+                    a.get_text(
+                        " ",
+                        strip=True)) for a in card.find_all(
+                    "div",
+                    class_=re.compile(r"alert"))]
             alerta_texto = "\n".join(alertas) if alertas else None
 
             campos = {}
@@ -169,13 +186,21 @@ async def consultar_status_fms(numero_reg: str) -> dict:
                     p = h4.parent.find("p", class_="card-text")
 
                 if p:
-                    valor = re.sub(r"\s+", " ", p.get_text(" ", strip=True)).strip()
+                    valor = re.sub(
+                        r"\s+",
+                        " ",
+                        p.get_text(
+                            " ",
+                            strip=True)).strip()
                     if valor:
                         campos[rotulo] = valor
 
-            situacao = campos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação") or "Informada no portal"
-            posicao_fila = campos.get("Posição da Fila") or _extrair_valor_campo_fms(soup, "Posição da Fila") or "Não informada"
-            previsao_atendimento = campos.get("Previsão de atendimento") or _extrair_valor_campo_fms(soup, "Previsão de atendimento") or "Não informada"
+            situacao = campos.get("Situação") or _extrair_valor_campo_fms(
+                soup, "Situação") or "Informada no portal"
+            posicao_fila = campos.get("Posição da Fila") or _extrair_valor_campo_fms(
+                soup, "Posição da Fila") or "Não informada"
+            previsao_atendimento = campos.get("Previsão de atendimento") or _extrair_valor_campo_fms(
+                soup, "Previsão de atendimento") or "Não informada"
 
             partes_resumo = []
             for k, v in campos.items():
@@ -183,7 +208,8 @@ async def consultar_status_fms(numero_reg: str) -> dict:
             if alerta_texto:
                 partes_resumo.append(f"Alerta: {alerta_texto}")
 
-            status_resumido = " | ".join(partes_resumo) if partes_resumo else f"Fila: {posicao_fila} | Previsão: {previsao_atendimento}"
+            status_resumido = " | ".join(
+                partes_resumo) if partes_resumo else f"Fila: {posicao_fila} | Previsão: {previsao_atendimento}"
 
             return {
                 "sucesso": True,
@@ -197,10 +223,14 @@ async def consultar_status_fms(numero_reg: str) -> dict:
             }
 
     except httpx.TimeoutException:
-        logging.warning(f"Timeout ao conectar no portal da FMS (Reg {numero_reg}).")
-        return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
+        logging.warning(
+            f"Timeout ao conectar no portal da FMS (Reg {numero_reg}).")
+        return {
+            "sucesso": False,
+            "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
     except Exception as e:
-        logging.error(f"Falha ao conectar no portal da FMS (Reg {numero_reg}): {e}")
+        logging.error(
+            f"Falha ao conectar no portal da FMS (Reg {numero_reg}): {e}")
         return {"sucesso": False, "mensagem": str(e)}
 
 
@@ -212,7 +242,8 @@ def montar_mensagem_regulacao(
     email: str | None = None,
     titulo: str = "🏥 *SITUAÇÃO DA REGULAÇÃO*",
 ) -> str:
-    nome_esc = escape_markdown(nome_paciente_exibicao(nome_paciente), version=1)
+    nome_esc = escape_markdown(
+        nome_paciente_exibicao(nome_paciente), version=1)
     numero_esc = escape_markdown(str(numero_reg), version=1)
 
     dt_exibicao = formatar_data_br(data_nascimento)
@@ -231,21 +262,25 @@ def montar_mensagem_regulacao(
     ]
 
     if isinstance(resultado, dict):
-        status = resultado.get("status_resumido") or resultado.get("status_anterior") or "Não informado"
+        status = resultado.get("status_resumido") or resultado.get(
+            "status_anterior") or "Não informado"
         posicao = resultado.get("posicao_fila") or "Não informada"
         previsao = resultado.get("previsao_atendimento") or "Não informada"
 
-        linhas.append(f"📌 *Situação:* {escape_markdown(str(status), version=1)}")
-        linhas.append(f"• *Posição da Fila:* {escape_markdown(str(posicao), version=1)}")
-        linhas.append(f"• *Previsão de atendimento:* {escape_markdown(str(previsao), version=1)}")
+        linhas.append(
+            f"📌 *Situação:* {escape_markdown(str(status), version=1)}")
+        linhas.append(
+            f"• *Posição da Fila:* {escape_markdown(str(posicao), version=1)}")
+        linhas.append(
+            f"• *Previsão de atendimento:* {escape_markdown(str(previsao), version=1)}")
 
     return "\n".join(linhas)
 
 
 def validar_dados_cadastrais(
-    numero_reg: str, 
-    nome_paciente: str | None, 
-    data_nascimento: str | None, 
+    numero_reg: str,
+    nome_paciente: str | None,
+    data_nascimento: str | None,
     email: str | None
 ) -> tuple[bool, str]:
     reg_limpo = str(numero_reg).strip() if numero_reg else ""
@@ -260,10 +295,10 @@ def validar_dados_cadastrais(
 
     data_limpa = str(data_nascimento).strip() if data_nascimento else ""
     pattern_data = r"^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/\d{4}$"
-    
+
     if not re.match(pattern_data, data_limpa):
         return False, "⚠️ Data de nascimento inválida. Utilize o formato DD/MM/AAAA."
-    
+
     try:
         data_obj = datetime.strptime(data_limpa, "%d/%m/%Y")
         if data_obj > datetime.now():
@@ -287,7 +322,7 @@ async def executar_cadastro_regulacao(
     data_nascimento: str | None,
     email: str | None
 ) -> tuple[bool, str]:
-    
+
     dados_validos, mensagem_erro = validar_dados_cadastrais(
         numero_reg, nome_paciente, data_nascimento, email
     )
@@ -340,9 +375,10 @@ async def executar_cadastro_regulacao(
                 .execute()
             )
             msg_retorno = (
-                f"ℹ️ Regulação `{escape_markdown(str(numero_reg), version=1)}` já estava cadastrada! "
-                "Os dados foram atualizados com sucesso."
-            )
+                f"ℹ️ Regulação `{
+                    escape_markdown(
+                        str(numero_reg),
+                        version=1)}` já estava cadastrada! " "Os dados foram atualizados com sucesso.")
         else:
             await asyncio.to_thread(
                 lambda: supabase.table("AlertaSUS_2.0").insert(dados_payload).execute()
@@ -355,7 +391,7 @@ async def executar_cadastro_regulacao(
                 email=email,
                 titulo="✅ *REGULAÇÃO CADASTRADA COM SUCESSO!*"
             )
-            
+
             msg_retorno = (
                 f"{detalhes}\n\n"
                 f"⏰ *Monitoramento automático:* varreduras diárias às *08:00* e *18:00*.\n"
@@ -596,7 +632,7 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
-        
+
     def do_GET(self):
         parsed_path = urlparse(self.path)
 
@@ -625,20 +661,21 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                 email = dados.get("email")
 
                 if not chat_id or not numero_reg:
-                    self._responder_json({"sucesso": False, "mensagem": "Dados incompletos."}, 400)
+                    self._responder_json(
+                        {"sucesso": False, "mensagem": "Dados incompletos."}, 400)
                     return
 
-                future = asyncio.run_coroutine_threadsafe(
-                    executar_cadastro_regulacao(chat_id, numero_reg, nome_paciente, data_nascimento, email),
-                    MAIN_LOOP
-                )
+                future = asyncio.run_coroutine_threadsafe(executar_cadastro_regulacao(
+                    chat_id, numero_reg, nome_paciente, data_nascimento, email), MAIN_LOOP)
                 sucesso, mensagem = future.result(timeout=20.0)
 
-                self._responder_json({"sucesso": sucesso, "mensagem": mensagem})
+                self._responder_json(
+                    {"sucesso": sucesso, "mensagem": mensagem})
 
             except Exception as e:
                 logging.error(f"Erro no processamento da API de cadastro: {e}")
-                self._responder_json({"sucesso": False, "mensagem": str(e)}, 500)
+                self._responder_json(
+                    {"sucesso": False, "mensagem": str(e)}, 500)
         else:
             self.send_response(404)
             self.end_headers()
@@ -662,7 +699,8 @@ def run_health_check():
 
 async def executar_varredura_regulacoes(bot_app):
     bot = getattr(bot_app, "bot", bot_app)
-    logging.info("🔍 Executando varredura agendada no portal da FMS Teresina...")
+    logging.info(
+        "🔍 Executando varredura agendada no portal da FMS Teresina...")
 
     try:
         resposta = await asyncio.to_thread(
@@ -697,7 +735,8 @@ async def executar_varredura_regulacoes(bot_app):
                         }).eq("id", reg["id"]).execute()
                     )
 
-                    titulo = "🔔 *ATUALIZAÇÃO DE REGULAÇÃO!*" if resultado.get("encontrado", True) else "⚠️ *ATUALIZAÇÃO DE REGULAÇÃO (NÃO LOCALIZADA)*"
+                    titulo = "🔔 *ATUALIZAÇÃO DE REGULAÇÃO!*" if resultado.get(
+                        "encontrado", True) else "⚠️ *ATUALIZAÇÃO DE REGULAÇÃO (NÃO LOCALIZADA)*"
                     mensagem = montar_mensagem_regulacao(
                         numero_reg,
                         resultado,
@@ -707,7 +746,8 @@ async def executar_varredura_regulacoes(bot_app):
                         titulo=titulo,
                     )
                     await bot.send_message(chat_id=chat_id, text=mensagem, parse_mode="Markdown")
-                    logging.info(f"Notificação enviada para {chat_id} - Regulação {numero_reg}")
+                    logging.info(
+                        f"Notificação enviada para {chat_id} - Regulação {numero_reg}")
 
     except Exception as e:
         logging.error(f"Erro na varredura agendada: {traceback.format_exc()}")
@@ -727,7 +767,10 @@ def obter_link_formulario(chat_id: int) -> str:
 
 def obter_teclado_cadastro(chat_id: int) -> InlineKeyboardMarkup:
     link = obter_link_formulario(chat_id)
-    btn = InlineKeyboardButton("📝 Abrir Formulário de Cadastro", web_app=WebAppInfo(url=link))
+    btn = InlineKeyboardButton(
+        "📝 Abrir Formulário de Cadastro",
+        web_app=WebAppInfo(
+            url=link))
     return InlineKeyboardMarkup([[btn]])
 
 
@@ -744,7 +787,7 @@ def criar_menu_principal() -> ReplyKeyboardMarkup:
         [btn_especifico, btn_corrigir],
         [btn_excluir, btn_ajuda]
     ]
-    
+
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
@@ -763,8 +806,7 @@ def obter_texto_instrucoes():
         "• `/corrigir ID_ANTIGO ID_NOVO` (Ex: `/corrigir 12345678 87654321`)\n\n"
         "📌 *4. Excluir uma regulação*\n"
         "• `/excluir 12345678`\n\n"
-        "⏰ *Varreduras automáticas:* diariamente às *08:00* e *18:00* (horário de Teresina)."
-    )
+        "⏰ *Varreduras automáticas:* diariamente às *08:00* e *18:00* (horário de Teresina).")
 
 
 # ==========================================
@@ -789,7 +831,9 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def comando_cadastrar(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE):
     """Envia o link/botão para o formulário de cadastro."""
     chat_id = update.effective_chat.id
     await update.message.reply_text(
@@ -799,7 +843,9 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def comando_verificar_agora(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE):
     """Consulta o status das regulações cadastradas."""
     chat_id = update.effective_chat.id
 
@@ -822,7 +868,8 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
             nome_paciente = resultado.get("paciente") or "Não informado"
             raw_data = resultado.get("data_nascimento")
             data_nascimento = raw_data if raw_data and raw_data != "Não informada" else None
-            email = resultado.get("email") if resultado.get("email") != "Não informado" else None
+            email = resultado.get("email") if resultado.get(
+                "email") != "Não informado" else None
             situacao = resultado.get("situacao") or "Cadastrado"
 
             try:
@@ -832,22 +879,28 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                     "nome_paciente": nome_paciente,
                     "data_nascimento": data_nascimento,
                     "email": email,
-                    "status_anterior": str(resultado.get("status_resumido", situacao))
-                }
+                    "status_anterior": str(
+                        resultado.get(
+                            "status_resumido",
+                            situacao))}
 
                 cadastro = await asyncio.to_thread(
                     lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
                 )
                 if cadastro.data:
                     reg_data = cadastro.data[0]
-                    nome_paciente = reg_data.get("nome_paciente", nome_paciente)
-                    data_nascimento = reg_data.get("data_nascimento", data_nascimento)
+                    nome_paciente = reg_data.get(
+                        "nome_paciente", nome_paciente)
+                    data_nascimento = reg_data.get(
+                        "data_nascimento", data_nascimento)
                     email = reg_data.get("email", email)
 
             except Exception as e:
-                logging.error(f"Erro ao salvar/atualizar regulação no Supabase: {e}")
+                logging.error(
+                    f"Erro ao salvar/atualizar regulação no Supabase: {e}")
 
-            titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
+            titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get(
+                "encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
             mensagem = montar_mensagem_regulacao(
                 numero_reg,
                 resultado,
@@ -877,7 +930,9 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                 )
                 regulacoes = resposta.data
 
-            logging.info(f"🔎 Total de registros localizados no Supabase: {len(regulacoes) if regulacoes else 0}")
+            logging.info(
+                f"🔎 Total de registros localizados no Supabase: {
+                    len(regulacoes) if regulacoes else 0}")
 
             if not regulacoes:
                 await update.message.reply_text(
@@ -892,7 +947,7 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                     nome_paciente = reg.get("nome_paciente")
                     data_nascimento = reg.get("data_nascimento")
                     email = reg.get("email")
-                    
+
                     resultado = await consultar_status_fms(numero_reg)
 
                     if resultado.get("sucesso"):
@@ -902,7 +957,8 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                             }).eq("id", reg["id"]).execute()
                         )
 
-                        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
+                        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get(
+                            "encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
                         mensagem = montar_mensagem_regulacao(
                             numero_reg,
                             resultado,
@@ -919,12 +975,16 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                             parse_mode="Markdown"
                         )
                 except Exception as err_item:
-                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
-                    reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
+                    logging.error(
+                        f"Erro ao processar regulação individual {reg}: {err_item}")
+                    reg_esc = escape_markdown(
+                        str(reg.get('numero_reg', 'desconhecido')), version=1)
                     await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
 
         except Exception as e:
-            logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
+            logging.error(
+                f"Erro crítico no comando verificar principal: {e}",
+                exc_info=True)
             await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
 
 
@@ -1034,15 +1094,17 @@ async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     except Exception as e:
-        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
-        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
+logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
 
 
 # ==========================================
 # ROTEADOR DE BOTÕES E TEXTOS SOLTOS
 # ==========================================
 
-async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def tratar_mensagem_texto(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE):
     """Mapeia cada botão do menu ou texto livre para sua ação correspondente."""
     texto = update.message.text.strip()
 
@@ -1129,17 +1191,43 @@ async def configurar_menu_comandos(application):
 # FUNÇÃO PRINCIPAL
 # ==========================================
 
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função start chamada (placeholder).")
+    await update.message.reply_text("Olá! Bem-vindo ao AlertaSUS 2.0!")
+
+async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função ajuda chamada (placeholder).")
+    await update.message.reply_text("Aqui está a ajuda do bot (placeholder).")
+
+async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função cadastrar chamada (placeholder).")
+    await update.message.reply_text("Iniciando processo de cadastro (placeholder).")
+
+async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função verificar_agora chamada (placeholder).")
+    await update.message.reply_text("Verificando agora... (placeholder)")
+
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função excluir chamada (placeholder).")
+    await update.message.reply_text("Iniciando processo de exclusão (placeholder).")
+
+async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Função corrigir chamada (placeholder).")
+    await update.message.reply_text("Iniciando processo de correção (placeholder).")
+
+async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Mensagem de texto padrão recebida (placeholder).")
+    await update.message.reply_text("Não entendi o seu comando. Use /ajuda para ver os comandos disponíveis (placeholder).")
+
+def job_varredura_agendada(context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("Executando varredura agendada (placeholder).")
+
 def main():
-    """Função principal que inicializa e executa a aplicação do Telegram."""
-    global BOT_APP, MAIN_LOOP
-
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
-
-    # Inicia o servidor web em uma thread em segundo plano
     threading.Thread(target=run_health_check, daemon=True).start()
-
-    # Inicializa a aplicação Telegram
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
+    global BOT_APP # Garante que BOT_APP seja global
     BOT_APP = app
 
     try:
@@ -1148,29 +1236,29 @@ def main():
         MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(MAIN_LOOP)
 
-    # Registro de Handlers do Telegram
-    app.add_handler(CommandHandler("start", comando_start))
+    # HANDLERS (Copiar todos os app.add_handler aqui com a indentação correta)
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda / Manual$"), comando_ajuda))
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
+    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(CommandHandler("corrigir", comando_corrigir))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora))
     app.add_handler(CommandHandler("excluir", comando_excluir))
     app.add_handler(CommandHandler("deletar", comando_excluir))
+    app.add_handler(MessageHandler(filters.Regex("^❌ Excluir Regulação$"), comando_excluir))
+    app.add_handler(CommandHandler("corrigir", comando_corrigir))
+    app.add_handler(MessageHandler(filters.Regex("^✏️ Corrigir ID$"), comando_corrigir))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_texto_padrao))
+    # Agendamento diário (08:00 e 18:00 no fuso de Teresina)
+    job_queue = app.job_queue
+    job_queue.run_daily(job_varredura_agendada, time=time(hour=8, minute=0, second=0, tzinfo=FUSO_HORARIO))
+    job_queue.run_daily(job_varredura_agendada, time=time(hour=18, minute=0, second=0, tzinfo=FUSO_HORARIO))
 
-    # Handler para mensagens de texto e botões do teclado
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_mensagem_texto))
-
-    # Agendamento diário de varreduras (08:00 e 18:00 - Horário de Teresina)
-    if app.job_queue:
-        app.job_queue.run_daily(job_varredura_agendada, time=time(hour=8, minute=0, second=0, tzinfo=FUSO_HORARIO))
-        app.job_queue.run_daily(job_varredura_agendada, time=time(hour=18, minute=0, second=0, tzinfo=FUSO_HORARIO))
-        print("⏰ Varreduras diárias configuradas para 08:00 e 18:00 (Fuso Teresina).", flush=True)
-
+    print("⏰ Varreduras diárias configuradas para 08:00 e 18:00 (Fuso Teresina).", flush=True)
     print("🚀 AlertaSUS 2.0 em execução com sucesso!", flush=True)
 
-    # Inicia o polling de atualizações
     app.run_polling(drop_pending_updates=True)
-
 
 if __name__ == "__main__":
     main()
