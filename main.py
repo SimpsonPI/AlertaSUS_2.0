@@ -831,7 +831,7 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
 
             try:
                 dados_regulacao = {
-                    "chat_id": chat_id,
+                    "chat_id": str(chat_id),
                     "numero_reg": str(numero_reg),
                     "nome_paciente": nome_paciente,
                     "data_nascimento": data_nascimento,
@@ -866,24 +866,24 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                 f"❌ Falha ao consultar o portal da FMS para o ID `{reg_esc}`.",
                 parse_mode="Markdown"
             )
-else:
+    else:
         await update.message.reply_text("⏳ Consultando suas regulações no portal da FMS...")
 
         try:
-            # Converte o chat_id para texto e número para garantir a busca no Supabase
-            chat_id_num = int(chat_id)
-            chat_id_str = str(chat_id)
-
-            # Busca no Supabase aceitando tanto formato texto quanto numérico
+            # 1. Tenta buscar pelo chat_id como String
             resposta = await asyncio.to_thread(
-                lambda: supabase.table("AlertaSUS_2.0")
-                .select("*")
-                .or_(f"chat_id.eq.{chat_id_num},chat_id.eq.{chat_id_str}")
-                .execute()
+                lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", str(chat_id)).execute()
             )
             regulacoes = resposta.data
 
-            logging.info(f"🔎 Registros encontrados para o chat_id {chat_id}: {len(regulacoes) if regulacoes else 0}")
+            # 2. Se não encontrar, tenta buscar pelo chat_id como Integer
+            if not regulacoes:
+                resposta = await asyncio.to_thread(
+                    lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int(chat_id)).execute()
+                )
+                regulacoes = resposta.data
+
+            logging.info(f"🔎 Total de registros localizados no Supabase: {len(regulacoes) if regulacoes else 0}")
 
             if not regulacoes:
                 await update.message.reply_text(
@@ -891,9 +891,6 @@ else:
                     reply_markup=obter_teclado_cadastro(chat_id)
                 )
                 return
-
-            # Avisa a quantidade que será consultada
-            await update.message.reply_text(f"📋 Encontrada(s) {len(regulacoes)} regulação(ões). Processando...")
 
             for reg in regulacoes:
                 try:
@@ -928,13 +925,13 @@ else:
                             parse_mode="Markdown"
                         )
                 except Exception as err_item:
-                    logging.error(f"Erro ao processar item {reg}: {err_item}")
+                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
                     reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
                     await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
 
         except Exception as e:
-            logging.error(f"Erro no comando verificar principal: {e}", exc_info=True)
-            await update.message.reply_text("❌ Ocorreu um erro ao acessar o banco de dados das suas regulações.")
+            logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
+            await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
 
 
 async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
