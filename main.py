@@ -866,14 +866,24 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                 f"❌ Falha ao consultar o portal da FMS para o ID `{reg_esc}`.",
                 parse_mode="Markdown"
             )
-    else:
+else:
         await update.message.reply_text("⏳ Consultando suas regulações no portal da FMS...")
 
         try:
+            # Converte o chat_id para texto e número para garantir a busca no Supabase
+            chat_id_num = int(chat_id)
+            chat_id_str = str(chat_id)
+
+            # Busca no Supabase aceitando tanto formato texto quanto numérico
             resposta = await asyncio.to_thread(
-                lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", chat_id).execute()
+                lambda: supabase.table("AlertaSUS_2.0")
+                .select("*")
+                .or_(f"chat_id.eq.{chat_id_num},chat_id.eq.{chat_id_str}")
+                .execute()
             )
             regulacoes = resposta.data
+
+            logging.info(f"🔎 Registros encontrados para o chat_id {chat_id}: {len(regulacoes) if regulacoes else 0}")
 
             if not regulacoes:
                 await update.message.reply_text(
@@ -881,6 +891,9 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                     reply_markup=obter_teclado_cadastro(chat_id)
                 )
                 return
+
+            # Avisa a quantidade que será consultada
+            await update.message.reply_text(f"📋 Encontrada(s) {len(regulacoes)} regulação(ões). Processando...")
 
             for reg in regulacoes:
                 try:
@@ -915,65 +928,13 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                             parse_mode="Markdown"
                         )
                 except Exception as err_item:
-                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
+                    logging.error(f"Erro ao processar item {reg}: {err_item}")
                     reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
                     await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
 
         except Exception as e:
             logging.error(f"Erro no comando verificar principal: {e}", exc_info=True)
             await update.message.reply_text("❌ Ocorreu um erro ao acessar o banco de dados das suas regulações.")
-
-
-async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
-    if not context.args:
-        await update.message.reply_text(
-            "⚠️ Informe o ID que deseja excluir.\nExemplo: `/excluir 12345678`",
-            parse_mode="Markdown"
-        )
-        return
-
-    numero_reg = "".join(re.findall(r'\d+', context.args[0]))
-
-    if not numero_reg:
-        await update.message.reply_text("⚠️ Informe um número de regulação válido.")
-        return
-
-    try:
-        resposta = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0")
-            .select("*")
-            .eq("chat_id", chat_id)
-            .eq("numero_reg", numero_reg)
-            .execute()
-        )
-
-        reg_esc = escape_markdown(numero_reg, version=1)
-
-        if not resposta.data:
-            await update.message.reply_text(
-                f"🔍 A regulação `{reg_esc}` não foi encontrada no seu cadastro.",
-                parse_mode="Markdown"
-            )
-            return
-
-        await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0")
-            .delete()
-            .eq("chat_id", chat_id)
-            .eq("numero_reg", numero_reg)
-            .execute()
-        )
-
-        await update.message.reply_text(
-            f"🗑️ Regulação `{reg_esc}` excluída com sucesso!",
-            parse_mode="Markdown"
-        )
-
-    except Exception as e:
-        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
-        await update.message.reply_text("❌ Ocorreu um erro ao excluir a regulação do banco de dados.")
 
 
 async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
