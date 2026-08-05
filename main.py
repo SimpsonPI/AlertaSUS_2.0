@@ -812,9 +812,6 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 # ROTEADOR DE BOTÕES E TEXTOS SOLTOS
 # ==========================================
-# ==========================================
-# ROTEADOR DE BOTÕES E TEXTOS SOLTOS
-# ==========================================
 async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mapeia cada botão do menu para sua respectiva ação/função."""
     texto = update.message.text.strip()
@@ -968,6 +965,134 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                                 "status_anterior": resultado.get("status_resumido", "Atualizado")
                             }).eq("id", reg["id"]).execute()
                         )
+
+                        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
+                        mensagem = montar_mensagem_regulacao(
+                            numero_reg,
+                            resultado,
+                            nome_paciente=nome_paciente,
+                            data_nascimento=data_nascimento,
+                            email=email,
+                            titulo=titulo
+                        )
+                        await update.message.reply_text(mensagem, parse_mode="Markdown")
+                    else:
+                        reg_esc = escape_markdown(str(numero_reg), version=1)
+                        await update.message.reply_text(
+                            f"❌ Erro ao consultar a regulação `{reg_esc}` no portal da FMS.",
+                            parse_mode="Markdown"
+                        )
+                except Exception as err_item:
+                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
+                    reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
+                    await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
+
+        except Exception as e:
+            logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
+            await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
+
+
+# ==========================================
+# COMANDO: EXCLUIR
+# ==========================================
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exclui uma regulação do Supabase."""
+    chat_id = update.effective_chat.id
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ *Como excluir uma regulação:*\n\nDigite o comando acompanhado do número da regulação.\nExemplo: `/excluir 12345678`",
+            parse_mode="Markdown"
+        )
+        return
+
+    numero_reg = "".join(re.findall(r'\d+', context.args[0]))
+
+    if not numero_reg:
+        await update.message.reply_text("⚠️ Número de regulação inválido.")
+        return
+
+    try:
+        resposta = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0")
+            .delete()
+            .eq("chat_id", str(chat_id))
+            .eq("numero_reg", str(numero_reg))
+            .execute()
+        )
+
+        if not resposta.data:
+            resposta = await asyncio.to_thread(
+                lambda: supabase.table("AlertaSUS_2.0")
+                .delete()
+                .eq("chat_id", int(chat_id))
+                .eq("numero_reg", str(numero_reg))
+                .execute()
+            )
+
+        reg_esc = escape_markdown(numero_reg, version=1)
+
+        if resposta.data:
+            await update.message.reply_text(
+                f"✅ Regulação `{reg_esc}` excluída com sucesso!",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ Regulação `{reg_esc}` não foi encontrada no seu cadastro.",
+                parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
+
+
+# ==========================================
+# CONFIGURAÇÃO DO MENU DE COMANDOS
+# ==========================================
+async def configurar_menu_comandos(application):
+    """Configura o menu de comandos visível no Telegram."""
+    try:
+        from telegram import BotCommand
+        comandos = [
+            BotCommand("start", "Iniciar bot e exibir menu principal"),
+            BotCommand("verificar", "Consultar status das regulações FMS"),
+            BotCommand("excluir", "Excluir uma regulação cadastrada"),
+            BotCommand("ajuda", "Exibir ajuda e instruções")
+        ]
+        await application.bot.set_my_commands(comandos)
+    except Exception as e:
+        logging.error(f"Erro ao configurar menu de comandos: {e}")
+
+
+# ==========================================
+# FUNÇÃO PRINCIPAL
+# ==========================================
+def main():
+    """Função principal que inicia a aplicação do Telegram."""
+    global BOT_APP, MAIN_LOOP
+
+    print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
+
+    threading.Thread(target=run_health_check, daemon=True).start()
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
+    BOT_APP = app
+
+    app.add_handler(CommandHandler("start", comando_start))
+    app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
+    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
+    app.add_handler(CommandHandler("excluir", comando_excluir))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_mensagem_texto))
+
+    MAIN_LOOP = asyncio.get_event_loop()
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()
 
                         titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
                         mensagem = montar_mensagem_regulacao(
