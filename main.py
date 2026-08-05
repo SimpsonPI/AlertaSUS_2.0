@@ -932,7 +932,7 @@ if resultado.get("sucesso"):
             "status_anterior": str(situacao)
         }
 
-        try:
+    try:
         # 2. Monta o dicionário com os dados saneados
         dados_regulacao = {
             "chat_id": chat_id,
@@ -956,8 +956,8 @@ if resultado.get("sucesso"):
             data_nascimento = reg_data.get("data_nascimento")
             email = reg_data.get("email")
 
-        except Exception as e:
-            print(f"❌ Erro ao salvar regulação no Supabase: {e}")
+    except Exception as e:
+        print(f"❌ Erro ao salvar regulação no Supabase: {e}")
 
         await asyncio.to_thread(
                     lambda: supabase.table("AlertaSUS_2.0").update({
