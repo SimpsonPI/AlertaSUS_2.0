@@ -809,10 +809,8 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=obter_teclado_cadastro(chat_id)
     )
-
-
 # ==========================================
-# TRATAMENTO DE TEXTO / NÚMEROS / BOTÕES
+# ROTEADOR DE BOTÕES E TEXTOS SOLTOS
 # ==========================================
 # ==========================================
 # ROTEADOR DE BOTÕES E TEXTOS SOLTOS
@@ -863,6 +861,12 @@ async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TY
         "⚠️ Opção não reconhecida. Por favor, escolha uma opção no Menu abaixo ou envie o número de uma regulação.",
         reply_markup=criar_menu_principal()
     )
+
+
+# ==========================================
+# COMANDO: VERIFICAR
+# ==========================================
+async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Consulta o status das regulações cadastradas."""
     chat_id = update.effective_chat.id
 
@@ -989,9 +993,6 @@ async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as e:
             logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
             await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
-
-
-async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exclui uma regulação do Supabase."""
     chat_id = update.effective_chat.id
 
