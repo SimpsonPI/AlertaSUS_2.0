@@ -932,19 +932,32 @@ if resultado.get("sucesso"):
             "status_anterior": str(situacao)
         }
 
+        try:
+        # 2. Monta o dicionário com os dados saneados
+        dados_regulacao = {
+            "chat_id": chat_id,
+            "numero_reg": str(numero_reg),
+            "nome_paciente": nome_paciente,
+            "data_nascimento": data_nascimento,
+            "email": email,
+            "status_anterior": str(situacao)
+        }
+
         # 3. Salva ou atualiza no Supabase
         cadastro = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
         )
         print(f"✅ Regulação {numero_reg} salva com sucesso no Supabase!")
 
+        # Extrai os dados salvos se o retorno contiver registros
+        if cadastro.data:
+            reg_data = cadastro.data[0]
+            nome_paciente = reg_data.get("nome_paciente")
+            data_nascimento = reg_data.get("data_nascimento")
+            email = reg_data.get("email")
+
     except Exception as e:
         print(f"❌ Erro ao salvar regulação no Supabase: {e}")
-                if cadastro.data:
-                    reg_data = cadastro.data[0]
-                    nome_paciente = reg_data.get("nome_paciente")
-                    data_nascimento = reg_data.get("data_nascimento")
-                    email = reg_data.get("email")
 
                 await asyncio.to_thread(
                     lambda: supabase.table("AlertaSUS_2.0").update({
