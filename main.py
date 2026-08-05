@@ -910,14 +910,36 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
 
         resultado = await consultar_status_fms(numero_reg)
 
-        if resultado.get("sucesso"):
-            nome_paciente = None
-            data_nascimento = None
-            email = None
-            try:
-                cadastro = await asyncio.to_thread(
-                    lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", chat_id).eq("numero_reg", numero_reg).execute()
-                )
+if resultado.get("sucesso"):
+    # 1. Captura os campos vindos da consulta FMS
+    nome_paciente = resultado.get("paciente") or "Não informado"
+    
+    # TRATAMENTO CRÍTICO: Se a data for "Não informada" ou vazia, vira None (que vira NULL no banco)
+    raw_data = resultado.get("data_nascimento")
+    data_nascimento = raw_data if raw_data and raw_data != "Não informada" else None
+    
+    email = resultado.get("email") if resultado.get("email") != "Não informado" else None
+    situacao = resultado.get("situacao") or "Cadastrado"
+
+    try:
+        # 2. Monta o dicionário com os dados saneados
+        dados_regulacao = {
+            "chat_id": chat_id,
+            "numero_reg": str(numero_reg),
+            "nome_paciente": nome_paciente,
+            "data_nascimento": data_nascimento,
+            "email": email,
+            "status_anterior": str(situacao)
+        }
+
+        # 3. Salva ou atualiza no Supabase
+        cadastro = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
+        )
+        print(f"✅ Regulação {numero_reg} salva com sucesso no Supabase!")
+
+    except Exception as e:
+        print(f"❌ Erro ao salvar regulação no Supabase: {e}")
                 if cadastro.data:
                     reg_data = cadastro.data[0]
                     nome_paciente = reg_data.get("nome_paciente")
