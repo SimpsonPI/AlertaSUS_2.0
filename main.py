@@ -795,13 +795,22 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    await update.message.reply_text(
-        "📝 Clique no botão abaixo para abrir o **Formulário de Cadastro** e preencher os dados da regulação:",
-        parse_mode="Markdown",
-        reply_markup=obter_teclado_cadastro(chat_id)
-    )
+# ==========================================
+# TRATAMENTO DE TEXTO / NÚMEROS SOLTOS
+# ==========================================
+async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Trata mensagens de texto soltas enviadas no chat."""
+    import re
+    texto_limpo = "".join(re.findall(r'\d+', update.message.text))
+    
+    if texto_limpo:
+        await update.message.reply_text(
+            f"✅ Você enviou o número: `{texto_limpo}`.\n\n"
+            f"Para consultar a situação e registrar no sistema, por favor, clique ou digite: `/verificar {texto_limpo}`",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text("⚠️ Por favor, envie um número de regulação válido ou escolha uma opção no Menu.")
 
 
 # ==========================================
