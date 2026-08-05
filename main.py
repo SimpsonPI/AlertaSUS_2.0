@@ -804,134 +804,58 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
-    if context.args:
-        numero_reg = "".join(re.findall(r'\d+', context.args[0]))
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ *Como excluir uma regulação:*\n\nDigite o comando acompanhado do número da regulação.\nExemplo: `/excluir 12345678`",
+            parse_mode="Markdown"
+        )
+        return
 
-        if not numero_reg:
-            await update.message.reply_text(
-                "⚠️ Informe um número de regulação válido.\nExemplo: `/verificar 12345678`",
-                parse_mode="Markdown"
+    numero_reg = "".join(re.findall(r'\d+', context.args[0]))
+
+    if not numero_reg:
+        await update.message.reply_text("⚠️ Número de regulação inválido.")
+        return
+
+    try:
+        # Tenta excluir buscando o chat_id como String
+        resposta = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0")
+            .delete()
+            .eq("chat_id", str(chat_id))
+            .eq("numero_reg", str(numero_reg))
+            .execute()
+        )
+
+        # Se não deletou nenhum registro, tenta com o chat_id como Integer
+        if not resposta.data:
+            resposta = await asyncio.to_thread(
+                lambda: supabase.table("AlertaSUS_2.0")
+                .delete()
+                .eq("chat_id", int(chat_id))
+                .eq("numero_reg", str(numero_reg))
+                .execute()
             )
-            return
 
         reg_esc = escape_markdown(numero_reg, version=1)
-        await update.message.reply_text(f"⏳ Consultando a regulação `{reg_esc}` na FMS...", parse_mode="Markdown")
 
-        resultado = await consultar_status_fms(numero_reg)
-
-        if resultado.get("sucesso"):
-            nome_paciente = resultado.get("paciente") or "Não informado"
-            raw_data = resultado.get("data_nascimento")
-            data_nascimento = raw_data if raw_data and raw_data != "Não informada" else None
-            email = resultado.get("email") if resultado.get("email") != "Não informado" else None
-            situacao = resultado.get("situacao") or "Cadastrado"
-
-            try:
-                dados_regulacao = {
-                    "chat_id": str(chat_id),
-                    "numero_reg": str(numero_reg),
-                    "nome_paciente": nome_paciente,
-                    "data_nascimento": data_nascimento,
-                    "email": email,
-                    "status_anterior": str(resultado.get("status_resumido", situacao))
-                }
-
-                cadastro = await asyncio.to_thread(
-                    lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
-                )
-                if cadastro.data:
-                    reg_data = cadastro.data[0]
-                    nome_paciente = reg_data.get("nome_paciente", nome_paciente)
-                    data_nascimento = reg_data.get("data_nascimento", data_nascimento)
-                    email = reg_data.get("email", email)
-
-            except Exception as e:
-                logging.error(f"Erro ao salvar/atualizar regulação no Supabase: {e}")
-
-            titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
-            mensagem = montar_mensagem_regulacao(
-                numero_reg,
-                resultado,
-                nome_paciente=nome_paciente,
-                data_nascimento=data_nascimento,
-                email=email,
-                titulo=titulo
-            )
-            await update.message.reply_text(mensagem, parse_mode="Markdown")
-        else:
+        if resposta.data:
             await update.message.reply_text(
-                f"❌ Falha ao consultar o portal da FMS para o ID `{reg_esc}`.",
+                f"✅ Regulação `{reg_esc}` excluída com sucesso!",
                 parse_mode="Markdown"
             )
-    else:
-        await update.message.reply_text("⏳ Consultando suas regulações no portal da FMS...")
-
-        try:
-            # 1. Tenta buscar pelo chat_id como String
-            resposta = await asyncio.to_thread(
-                lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", str(chat_id)).execute()
+        else:
+            await update.message.reply_text(
+                f"⚠️ Regulação `{reg_esc}` não foi encontrada no seu cadastro.",
+                parse_mode="Markdown"
             )
-            regulacoes = resposta.data
 
-            # 2. Se não encontrar, tenta buscar pelo chat_id como Integer
-            if not regulacoes:
-                resposta = await asyncio.to_thread(
-                    lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int(chat_id)).execute()
-                )
-                regulacoes = resposta.data
-
-            logging.info(f"🔎 Total de registros localizados no Supabase: {len(regulacoes) if regulacoes else 0}")
-
-            if not regulacoes:
-                await update.message.reply_text(
-                    "⚠️ Você não possui nenhuma regulação cadastrada.",
-                    reply_markup=obter_teclado_cadastro(chat_id)
-                )
-                return
-
-            for reg in regulacoes:
-                try:
-                    numero_reg = reg.get("numero_reg")
-                    nome_paciente = reg.get("nome_paciente")
-                    data_nascimento = reg.get("data_nascimento")
-                    email = reg.get("email")
-                    
-                    resultado = await consultar_status_fms(numero_reg)
-
-                    if resultado.get("sucesso"):
-                        await asyncio.to_thread(
-                            lambda: supabase.table("AlertaSUS_2.0").update({
-                                "status_anterior": resultado.get("status_resumido", "Atualizado")
-                            }).eq("id", reg["id"]).execute()
-                        )
-
-                        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
-                        mensagem = montar_mensagem_regulacao(
-                            numero_reg,
-                            resultado,
-                            nome_paciente=nome_paciente,
-                            data_nascimento=data_nascimento,
-                            email=email,
-                            titulo=titulo
-                        )
-                        await update.message.reply_text(mensagem, parse_mode="Markdown")
-                    else:
-                        reg_esc = escape_markdown(str(numero_reg), version=1)
-                        await update.message.reply_text(
-                            f"❌ Erro ao consultar a regulação `{reg_esc}` no portal da FMS.",
-                            parse_mode="Markdown"
-                        )
-                except Exception as err_item:
-                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
-                    reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
-                    await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
-
-        except Exception as e:
-            logging.error(f"Erro crítico no comando verificar principal: {e}", exc_info=True)
-            await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
+    except Exception as e:
+        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
 
 
 async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
