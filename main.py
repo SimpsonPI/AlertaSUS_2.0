@@ -1094,8 +1094,8 @@ async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     except Exception as e:
-logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
-await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
+        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação.")
 
 
 # ==========================================

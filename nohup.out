@@ -1,3 +1,33 @@
-  File "/content/AlertaSUS_2.0/AlertaSUS_2.0/main.py", line 1097
-    logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
-IndentationError: expected an indented block after 'except' statement on line 1096
+🤖 Iniciando AlertaSUS_2.0...
+/content/AlertaSUS_2.0/AlertaSUS_2.0/main.py:1234: DeprecationWarning: There is no current event loop
+  MAIN_LOOP = asyncio.get_event_loop()
+2026-08-05 20:53:42,596 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-08-05 20:53:42,596 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+⏰ Varreduras diárias configuradas para 08:00 e 18:00 (Fuso Teresina).
+🚀 AlertaSUS 2.0 em execução com sucesso!
+2026-08-05 20:53:44,713 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getMe "HTTP/1.1 200 OK"
+2026-08-05 20:53:44,953 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/setMyCommands "HTTP/1.1 200 OK"
+2026-08-05 20:53:45,068 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/deleteWebhook "HTTP/1.1 200 OK"
+2026-08-05 20:53:45,069 - apscheduler.scheduler - INFO - Added job "job_varredura_agendada" to job store "default"
+2026-08-05 20:53:45,070 - apscheduler.scheduler - INFO - Added job "job_varredura_agendada" to job store "default"
+2026-08-05 20:53:45,070 - apscheduler.scheduler - INFO - Scheduler started
+2026-08-05 20:53:45,070 - telegram.ext.Application - INFO - Application started
+2026-08-05 20:53:55,541 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:05,660 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:15,778 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:18,295 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:18,788 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/sendMessage "HTTP/1.1 200 OK"
+2026-08-05 20:54:28,417 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:38,553 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:48,678 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:54:58,810 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:08,931 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:19,057 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:29,175 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:39,293 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:49,418 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:54,909 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:55:55,400 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/sendMessage "HTTP/1.1 200 OK"
+2026-08-05 20:56:05,028 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:56:15,157 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
+2026-08-05 20:56:25,279 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8988706536:AAHBXyKEXmRYHjiwAw77Vk9Goxj1DSowjcI/getUpdates "HTTP/1.1 200 OK"
