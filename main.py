@@ -814,29 +814,55 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 # TRATAMENTO DE TEXTO / NÚMEROS / BOTÕES
 # ==========================================
+# ==========================================
+# ROTEADOR DE BOTÕES E TEXTOS SOLTOS
+# ==========================================
 async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Trata mensagens de texto soltas e cliques nos botões do menu."""
+    """Mapeia cada botão do menu para sua respectiva ação/função."""
     texto = update.message.text.strip()
 
-    # Se o usuário clicou no botão "Consultar Todos" (ou Vários) do teclado
-    if "Consultar" in texto or "Consultar Todos" in texto:
+    # 1. Botão: Cadastrar Nova
+    if "Cadastrar Nova" in texto or "Cadastrar" in texto:
+        await comando_cadastrar(update, context)
+        return
+
+    # 2. Botão: Consultar Todos
+    if "Consultar Todos" in texto:
         await comando_verificar_agora(update, context)
         return
 
-    # Se o usuário enviou um número de regulação solto no chat
-    texto_limpo = "".join(re.findall(r'\d+', texto))
-    
-    if texto_limpo:
+    # 3. Botão: Consultar Específico
+    if "Consultar Especifico" in texto or "Consultar Específico" in texto:
         await update.message.reply_text(
-            f"✅ Você enviou o número: `{texto_limpo}`.\n\n"
-            f"Para consultar a situação e registrar no sistema, por favor, clique ou digite: `/verificar {texto_limpo}`",
+            "🔍 *Como consultar uma regulação específica:*\n\n"
+            "Digite `/verificar` seguido do número da regulação.\n"
+            "Exemplo: `/verificar 12345678`",
             parse_mode="Markdown"
         )
-    else:
-        await update.message.reply_text("⚠️ Por favor, envie um número de regulação válido ou escolha uma opção no Menu.")
+        return
 
+    # 4. Botão: Corrigir ID / Excluir
+    if "Corrigir ID" in texto or "Excluir" in texto:
+        await update.message.reply_text(
+            "✏️ *Como corrigir ou excluir uma regulação:*\n\n"
+            "Digite `/excluir` seguido do número da regulação cadastrada.\n"
+            "Exemplo: `/excluir 12345678`",
+            parse_mode="Markdown"
+        )
+        return
 
-async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 5. Se o usuário enviou apenas um número de regulação solto no chat
+    texto_limpo = "".join(re.findall(r'\d+', texto))
+    if texto_limpo:
+        context.args = [texto_limpo]
+        await comando_verificar_agora(update, context)
+        return
+
+    # Caso receba qualquer outro texto
+    await update.message.reply_text(
+        "⚠️ Opção não reconhecida. Por favor, escolha uma opção no Menu abaixo ou envie o número de uma regulação.",
+        reply_markup=criar_menu_principal()
+    )
     """Consulta o status das regulações cadastradas."""
     chat_id = update.effective_chat.id
 
