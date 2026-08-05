@@ -22,7 +22,7 @@ from telegram import (
     WebAppInfo,
     ReplyKeyboardMarkup,
     KeyboardButton,
-    ForceReply,  # <-- Adicionado aqui
+    ForceReply,
 )
 from telegram.helpers import escape_markdown
 from telegram.ext import (
@@ -57,8 +57,9 @@ FUSO_HORARIO = ZoneInfo("America/Fortaleza")
 
 # Endpoint oficial de busca da FMS Teresina
 URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index"
-# --- FUNÇÕES AUXILIARES ---
-# --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
+
+BOT_APP = None
+MAIN_LOOP = None
 
 # --- FUNÇÕES AUXILIARES DE FORMATAÇÃO ---
 
@@ -77,11 +78,9 @@ def formatar_data_br(data_str):
 
 
 def nome_paciente_exibicao(nome: str | None) -> str:
-    if not nome:
+    if not nome or not nome.strip() or nome.strip() == "Aguardando consulta":
         return "Não informado"
     return nome.strip()
-BOT_APP = None
-MAIN_LOOP = None
 
 
 # ==========================================
@@ -101,39 +100,25 @@ def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
 
 
 async def consultar_status_fms(numero_reg: str) -> dict:
-    # Subtitua SUA_API_KEY_AQUI pela chave que você gerou no painel da ScraperAPI
-    # Lê a chave configurada no Railway com segurança
-    # 1. Lê a chave das variáveis do Railway com segurança
     SCRAPER_KEY = os.getenv("SCRAPER_KEY")
 
     if not SCRAPER_KEY:
         logging.error("A variável de ambiente SCRAPER_KEY não foi configurada.")
         return {"sucesso": False, "mensagem": "Erro de configuração no servidor."}
 
-    # 2. Monta a URL do portal FMS
     url_fms_target = f"{URL_BUSCA_FMS}?number_id={numero_reg}"
-
-    # 3. Monta a URL da ScraperAPI diretamente (sem a codificação automática do httpx)
     scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}&country_code=br"
 
     try:
-        async with httpx.AsyncClient( follow_redirects=True, timeout=30.0) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             resposta = await client.get(scraper_url)
 
             if resposta.status_code != 200:
                 logging.error(f"Erro HTTP {resposta.status_code} na ScraperAPI.")
                 return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
 
-            # O seu código de extração com BeautifulSoup continua normal aqui abaixo...
-
-            from bs4 import BeautifulSoup
-
-# ... dentro da sua função de consulta ...
-
-            # Parse do HTML retornado
             soup = BeautifulSoup(resposta.text, "html.parser")
 
-            # 1. Validação: Verifica se a página retornou "Nenhum registro encontrado" ou similar
             texto_pagina = soup.get_text().lower()
             if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
                 return {
@@ -141,9 +126,7 @@ async def consultar_status_fms(numero_reg: str) -> dict:
                     "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS."
                 }
 
-            # 2. Extração segura dos campos (evita quebra por falta de tag)
             try:
-                # Exemplo de busca de elementos (ajuste os seletores conforme suas variáveis)
                 tabela = soup.find("table")
                 if not tabela:
                     logging.warning(f"Tabela não encontrada no HTML para a regulação {numero_reg}.")
@@ -151,19 +134,15 @@ async def consultar_status_fms(numero_reg: str) -> dict:
                         "sucesso": False, 
                         "mensagem": "⚠️ Não foi possível extrair a tabela de dados da FMS."
                     }
-
-                # Se a tabela existe, realiza o parsing normalmente
-                # (Mantenha aqui a sua lógica de leitura das linhas/colunas)
-
             except (AttributeError, IndexError) as err:
                 logging.error(f"Erro ao ler estrutura da tabela: {err}")
                 return {
                     "sucesso": False,
                     "mensagem": "Erro ao formatar os dados da regulação."
                 }
-            texto_pagina = soup.get_text()
 
-            if "Verifique se o ID ou da solicitação" in texto_pagina:
+            texto_pagina_raw = soup.get_text()
+            if "Verifique se o ID ou da solicitação" in texto_pagina_raw:
                 return {
                     "sucesso": True,
                     "encontrado": False,
@@ -223,11 +202,6 @@ async def consultar_status_fms(numero_reg: str) -> dict:
         return {"sucesso": False, "mensagem": str(e)}
 
 
-def nome_paciente_exibicao(nome: str | None) -> str:
-    if not nome or not nome.strip() or nome.strip() == "Aguardando consulta":
-        return "Não informado"
-    return nome.strip()
-
 def montar_mensagem_regulacao(
     numero_reg: str,
     resultado: dict,
@@ -254,7 +228,6 @@ def montar_mensagem_regulacao(
         f"🆔 *ID de Regulação:* `{numero_esc}`",
     ]
 
-    # Monta os status retornados do sistema/banco
     if isinstance(resultado, dict):
         status = resultado.get("status_resumido") or resultado.get("status_anterior") or "Não informado"
         posicao = resultado.get("posicao_fila") or "Não informada"
@@ -265,25 +238,24 @@ def montar_mensagem_regulacao(
         linhas.append(f"• *Previsão de atendimento:* {escape_markdown(str(previsao), version=1)}")
 
     return "\n".join(linhas)
+
+
 def validar_dados_cadastrais(
     numero_reg: str, 
     nome_paciente: str | None, 
     data_nascimento: str | None, 
     email: str | None
 ) -> tuple[bool, str]:
-    # 1. Validação do Número de Regulação
     reg_limpo = str(numero_reg).strip() if numero_reg else ""
     if not reg_limpo or not reg_limpo.isalnum():
         return False, "⚠️ O número de regulação é obrigatório e deve conter apenas letras e números."
 
-    # 2. Validação do Nome do Paciente
     nome_limpo = str(nome_paciente).strip() if nome_paciente else ""
     if not nome_limpo or len(nome_limpo) < 3:
         return False, "⚠️ Informe o nome completo do paciente."
     if not re.match(r"^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$", nome_limpo):
         return False, "⚠️ O nome do paciente deve conter apenas letras e espaços."
 
-    # 3. Validação da Data de Nascimento
     data_limpa = str(data_nascimento).strip() if data_nascimento else ""
     pattern_data = r"^(0[1-9]|[12][0-9]|3[01])/(0[1-9]|1[0-2])/\d{4}$"
     
@@ -297,7 +269,6 @@ def validar_dados_cadastrais(
     except ValueError:
         return False, "⚠️ Data de nascimento inválida no calendário."
 
-    # 4. Validação do E-mail (OPCIONAL)
     if email and email.strip():
         email_limpo = email.strip()
         pattern_email = r"^[\w\.-]+@[\w\.-]+\.\w+$"
@@ -305,6 +276,7 @@ def validar_dados_cadastrais(
             return False, "⚠️ O e-mail digitado é inválido. Deixe em branco se não quiser informar."
 
     return True, "Dados válidos"
+
 
 async def executar_cadastro_regulacao(
     chat_id: int,
@@ -314,27 +286,20 @@ async def executar_cadastro_regulacao(
     email: str | None
 ) -> tuple[bool, str]:
     
-    # --- NOVO: Valida o formato dos dados recebidos antes de consultar a FMS ---
     dados_validos, mensagem_erro = validar_dados_cadastrais(
         numero_reg, nome_paciente, data_nascimento, email
     )
     if not dados_validos:
         return False, mensagem_erro
-    # --------------------------------------------------------------------------
 
     nome_salvar = nome_paciente or "Aguardando consulta"
     data_salvar = data_nascimento or "Não informada"
 
-    # Restante do seu código normal...
-
-    # 1. Realiza a consulta no portal da FMS
     resultado = await consultar_status_fms(numero_reg)
 
-    # 2. Caso ocorra erro de conexão/HTTP com a ScraperAPI ou FMS
     if not resultado.get("sucesso"):
         return False, "Não foi possível verificar a regulação na FMS Teresina neste momento. Tente novamente."
 
-    # 3. Caso a regulação NÃO exista no portal da FMS (Bloqueia o cadastro)
     if not resultado.get("encontrado", False):
         mensagem_erro = montar_mensagem_regulacao(
             numero_reg,
@@ -346,38 +311,7 @@ async def executar_cadastro_regulacao(
         )
         return False, mensagem_erro
 
-    # 4. A regulação existe! Salva no Supabase
     try:
-        dados_alerta = {
-            "chat_id": chat_id,
-            "numero_reg": numero_reg,
-            "nome_paciente": nome_salvar,
-            "data_nascimento": data_salvar,
-            "email": email,
-            "status_atual": resultado.get("status", "Cadastrado")
-        }
-
-        # Insere ou atualiza o registro na tabela "alertas"
-        supabase.table("alertas").upsert(dados_alerta).execute()
-
-        mensagem_sucesso = (
-            f"✅ *Alerta ativado com sucesso!*\n\n"
-            f"• *Regulação:* `{numero_reg}`\n"
-            f"• *Paciente:* {nome_salvar}\n\n"
-            f"Acompanharemos a fila para você!"
-        )
-        return True, mensagem_sucesso
-
-    except Exception as err:
-        logging.error(f"Erro ao salvar no Supabase para regulação {numero_reg}: {err}")
-        return False, "Erro ao salvar o alerta no banco de dados. Tente novamente."
-
-    # Verifica duplicidade no banco
-    try:
-        # Validação prévia para garantir que o resultado da consulta é válido
-        if not resultado or not isinstance(resultado, dict) or resultado.get("erro") or not resultado.get("status_resumido"):
-            return False, "❌ *Regulação não encontrada!* O ID informado é inválido ou não existe na base de dados."
-
         existente = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0")
             .select("*")
@@ -426,7 +360,6 @@ async def executar_cadastro_regulacao(
                 f"Para ver todos os seus cadastros, use `/verificar`."
             )
 
-        # Envia notificação diretamente pelo Bot
         if BOT_APP:
             await BOT_APP.bot.send_message(chat_id=chat_id, text=msg_retorno, parse_mode="Markdown")
 
@@ -588,7 +521,6 @@ FORMULARIO_HTML = """<!DOCTYPE html>
             tg.expand();
         }
 
-        // Recupera chat_id da URL ou do Telegram WebApp
         const urlParams = new URLSearchParams(window.location.search);
         let chatId = urlParams.get('chat_id');
         if (!chatId && tg?.initDataUnsafe?.user?.id) {
@@ -659,7 +591,6 @@ FORMULARIO_HTML = """<!DOCTYPE html>
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Desabilita logs repetitivos do servidor HTTP para manter o console limpo
         return
         
     def do_GET(self):
@@ -693,7 +624,6 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
                     self._responder_json({"sucesso": False, "mensagem": "Dados incompletos."}, 400)
                     return
 
-                # Executa o cadastro chamando a função assíncrona da thread principal
                 future = asyncio.run_coroutine_threadsafe(
                     executar_cadastro_regulacao(chat_id, numero_reg, nome_paciente, data_nascimento, email),
                     MAIN_LOOP
@@ -786,13 +716,11 @@ async def job_varredura_agendada(context: ContextTypes.DEFAULT_TYPE):
 # COMANDOS DO TELEGRAM
 # ==========================================
 def obter_link_formulario(chat_id: int) -> str:
-    # Aponta para o seu formulário no GitHub Pages mantendo o ID do usuário
     return f"https://simpsonpi.github.io/alerta-sus-bot/?chat_id={chat_id}"
 
 
 def obter_teclado_cadastro(chat_id: int) -> InlineKeyboardMarkup:
     link = obter_link_formulario(chat_id)
-    # Como o GitHub Pages é HTTPS, o WebApp do Telegram funciona diretamente
     btn = InlineKeyboardButton("📝 Abrir Formulário de Cadastro", web_app=WebAppInfo(url=link))
     return InlineKeyboardMarkup([[btn]])
 
@@ -816,13 +744,7 @@ def criar_menu_principal() -> ReplyKeyboardMarkup:
 
 
 def gerar_botoes_ids(regulacoes, acao_prefixo: str) -> InlineKeyboardMarkup:
-    """
-    Gera botões inline dinamicamente com base nas regulações do usuário.
-    Exemplos:
-    - regulacoes: [{'id': '12345678', 'status': 'Pendente'}]
-    - acao_prefixo: 'cons', 'corr', 'exc'
-    """
-    markup = InlineKeyboardMarkup(row_width=1)
+    keyboard = []
 
     for reg in regulacoes:
         reg_id = reg.get("id") or reg.get("numero_reg") or reg.get("numero")
@@ -833,9 +755,9 @@ def gerar_botoes_ids(regulacoes, acao_prefixo: str) -> InlineKeyboardMarkup:
 
         texto_botao = f"ID: {reg_id} - Status: {status}"
         callback_dado = f"{acao_prefixo}_{reg_id}"
-        markup.add(InlineKeyboardButton(texto_botao, callback_data=callback_dado))
+        keyboard.append([InlineKeyboardButton(texto_botao, callback_data=callback_dado)])
 
-    return markup
+    return InlineKeyboardMarkup(keyboard)
 
 
 def obter_texto_instrucoes():
@@ -843,7 +765,7 @@ def obter_texto_instrucoes():
         "👋 **Olá! Seja muito bem-vindo(a) ao AlertaSUS 2.0!**\n\n"
         "Estou aqui para facilitar a sua jornada e ajudar na gestão e consulta de regulações com rapidez e praticidade. 🩺✨\n\n"
         "⚠️ *Aviso: Ferramenta particular e independente, sem vínculo com a FMS.*\n\n"
-        "👇 **Escolha abaixo o que você deseja fazer hoje utilizando os botões do nosso menu:**"
+        "👇 **Escolha abaixo o que você deseja fazer hoje utilizando os botões do nosso menu:**\n"
         "📌 *1. Cadastrar regulação*\n"
         "Acesse o nosso formulário web interativo utilizando o comando `/cadastrar`.\n\n"
         "📌 *2. Consultar status*\n"
@@ -858,17 +780,7 @@ def obter_texto_instrucoes():
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Aqui você pega o seu menu criado pela função criar_menu_principal()
-    reply_markup = ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("➕ Cadastrar Nova"), KeyboardButton("📋 Consultar Todos")],
-            [KeyboardButton("🔍 Consultar Especifico"), KeyboardButton("✏️ Corrigir ID")],
-            [KeyboardButton("❌ Excluir Regulação"), KeyboardButton("ℹ️ Ajuda / Manual")]
-        ],
-        resize_keyboard=True
-    )
-    
-    # E envia a mensagem passando o reply_markup junto:
+    reply_markup = criar_menu_principal()
     await update.message.reply_text(
         "Olá! Escolha uma das opções abaixo no menu:",
         reply_markup=reply_markup
@@ -910,64 +822,36 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
 
         resultado = await consultar_status_fms(numero_reg)
 
-if resultado.get("sucesso"):
-    # 1. Captura os campos vindos da consulta FMS
-    nome_paciente = resultado.get("paciente") or "Não informado"
-    
-    # TRATAMENTO CRÍTICO: Se a data for "Não informada" ou vazia, vira None (que vira NULL no banco)
-    raw_data = resultado.get("data_nascimento")
-    data_nascimento = raw_data if raw_data and raw_data != "Não informada" else None
-    
-    email = resultado.get("email") if resultado.get("email") != "Não informado" else None
-    situacao = resultado.get("situacao") or "Cadastrado"
+        if resultado.get("sucesso"):
+            nome_paciente = resultado.get("paciente") or "Não informado"
+            raw_data = resultado.get("data_nascimento")
+            data_nascimento = raw_data if raw_data and raw_data != "Não informada" else None
+            email = resultado.get("email") if resultado.get("email") != "Não informado" else None
+            situacao = resultado.get("situacao") or "Cadastrado"
 
-    try:
-        # 2. Monta o dicionário com os dados saneados
-        dados_regulacao = {
-            "chat_id": chat_id,
-            "numero_reg": str(numero_reg),
-            "nome_paciente": nome_paciente,
-            "data_nascimento": data_nascimento,
-            "email": email,
-            "status_anterior": str(situacao)
-        }
+            try:
+                dados_regulacao = {
+                    "chat_id": chat_id,
+                    "numero_reg": str(numero_reg),
+                    "nome_paciente": nome_paciente,
+                    "data_nascimento": data_nascimento,
+                    "email": email,
+                    "status_anterior": str(resultado.get("status_resumido", situacao))
+                }
 
-    try:
-        # 2. Monta o dicionário com os dados saneados
-        dados_regulacao = {
-            "chat_id": chat_id,
-            "numero_reg": str(numero_reg),
-            "nome_paciente": nome_paciente,
-            "data_nascimento": data_nascimento,
-            "email": email,
-            "status_anterior": str(situacao)
-        }
-
-        # 3. Salva ou atualiza no Supabase
-        cadastro = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
-        )
-        print(f"✅ Regulação {numero_reg} salva com sucesso no Supabase!")
-
-        # Extrai os dados salvos se o retorno contiver registros
-        if cadastro.data:
-            reg_data = cadastro.data[0]
-            nome_paciente = reg_data.get("nome_paciente")
-            data_nascimento = reg_data.get("data_nascimento")
-            email = reg_data.get("email")
-
-    except Exception as e:
-        print(f"❌ Erro ao salvar regulação no Supabase: {e}")
-
-        await asyncio.to_thread(
-                    lambda: supabase.table("AlertaSUS_2.0").update({
-                        "status_anterior": resultado["status_resumido"]
-                    }).eq("chat_id", chat_id).eq("numero_reg", numero_reg).execute()
+                cadastro = await asyncio.to_thread(
+                    lambda: supabase.table("AlertaSUS_2.0").upsert(dados_regulacao).execute()
                 )
-    except Exception as e:
-        logging.error(f"Erro ao atualizar status no Supabase: {e}")
+                if cadastro.data:
+                    reg_data = cadastro.data[0]
+                    nome_paciente = reg_data.get("nome_paciente", nome_paciente)
+                    data_nascimento = reg_data.get("data_nascimento", data_nascimento)
+                    email = reg_data.get("email", email)
 
-        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
+            except Exception as e:
+                logging.error(f"Erro ao salvar/atualizar regulação no Supabase: {e}")
+
+            titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
             mensagem = montar_mensagem_regulacao(
                 numero_reg,
                 resultado,
@@ -1008,7 +892,7 @@ if resultado.get("sucesso"):
                 if resultado.get("sucesso"):
                     await asyncio.to_thread(
                         lambda: supabase.table("AlertaSUS_2.0").update({
-                            "status_anterior": resultado["status_resumido"]
+                            "status_anterior": resultado.get("status_resumido", "Atualizado")
                         }).eq("id", reg["id"]).execute()
                     )
 
@@ -1184,8 +1068,6 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
         await comando_ajuda(update, context)
         return
 
-    # --- RECONHECIMENTO AUTOMÁTICO DE RESPOSTAS E NÚMEROS DE ID ---
-    # Se o usuário respondeu à mensagem de solicitação do bot
     if update.message.reply_to_message:
         prompt = update.message.reply_to_message.text.lower()
         if "excluir" in prompt:
@@ -1201,7 +1083,6 @@ async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TY
             await comando_verificar_agora(update, context)
             return
 
-    # Se o usuário digitou diretamente apenas números no chat (ex: 12345678)
     if texto.isdigit():
         context.args = [texto]
         await comando_verificar_agora(update, context)
@@ -1248,23 +1129,18 @@ def main():
 
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
 
-    # Inicia o servidor Web
     threading.Thread(target=run_health_check, daemon=True).start()
 
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
     BOT_APP = app
 
-    # Captura a referência do Loop Async Principal
     try:
         MAIN_LOOP = asyncio.get_event_loop()
     except RuntimeError:
         MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(MAIN_LOOP)
-    # ==========================================
-    # ==========================================
-    # ==========================================
-    # HANDLERS (CORRIGIDO)
-    # ==========================================
+
+    # HANDLERS
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
     app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda / Manual$"), comando_ajuda))
@@ -1273,11 +1149,9 @@ def main():
     app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
     app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), comando_cadastrar))
     
-
+    # Verificar / Consultar
+    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
     app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora))
-    
-    
-    # 2. Consultar Todos (Substitua 'consultar_todos' pelo nome real da função que mostra todos os IDs)
     
     # Excluir / Deletar
     app.add_handler(CommandHandler("excluir", comando_excluir))
