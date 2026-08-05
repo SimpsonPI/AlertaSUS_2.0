@@ -883,39 +883,45 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
                 return
 
             for reg in regulacoes:
-                numero_reg = reg.get("numero_reg")
-                nome_paciente = reg.get("nome_paciente")
-                data_nascimento = reg.get("data_nascimento")
-                email = reg.get("email")
-                resultado = await consultar_status_fms(numero_reg)
+                try:
+                    numero_reg = reg.get("numero_reg")
+                    nome_paciente = reg.get("nome_paciente")
+                    data_nascimento = reg.get("data_nascimento")
+                    email = reg.get("email")
+                    
+                    resultado = await consultar_status_fms(numero_reg)
 
-                if resultado.get("sucesso"):
-                    await asyncio.to_thread(
-                        lambda: supabase.table("AlertaSUS_2.0").update({
-                            "status_anterior": resultado.get("status_resumido", "Atualizado")
-                        }).eq("id", reg["id"]).execute()
-                    )
+                    if resultado.get("sucesso"):
+                        await asyncio.to_thread(
+                            lambda: supabase.table("AlertaSUS_2.0").update({
+                                "status_anterior": resultado.get("status_resumido", "Atualizado")
+                            }).eq("id", reg["id"]).execute()
+                        )
 
-                    titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
-                    mensagem = montar_mensagem_regulacao(
-                        numero_reg,
-                        resultado,
-                        nome_paciente=nome_paciente,
-                        data_nascimento=data_nascimento,
-                        email=email,
-                        titulo=titulo
-                    )
-                    await update.message.reply_text(mensagem, parse_mode="Markdown")
-                else:
-                    reg_esc = escape_markdown(numero_reg, version=1)
-                    await update.message.reply_text(
-                        f"❌ Erro ao consultar a regulação `{reg_esc}` no portal da FMS.",
-                        parse_mode="Markdown"
-                    )
+                        titulo = "🏥 *SITUAÇÃO DA REGULAÇÃO*" if resultado.get("encontrado", True) else "⚠️ *REGULAÇÃO NÃO LOCALIZADA*"
+                        mensagem = montar_mensagem_regulacao(
+                            numero_reg,
+                            resultado,
+                            nome_paciente=nome_paciente,
+                            data_nascimento=data_nascimento,
+                            email=email,
+                            titulo=titulo
+                        )
+                        await update.message.reply_text(mensagem, parse_mode="Markdown")
+                    else:
+                        reg_esc = escape_markdown(str(numero_reg), version=1)
+                        await update.message.reply_text(
+                            f"❌ Erro ao consultar a regulação `{reg_esc}` no portal da FMS.",
+                            parse_mode="Markdown"
+                        )
+                except Exception as err_item:
+                    logging.error(f"Erro ao processar regulação individual {reg}: {err_item}")
+                    reg_esc = escape_markdown(str(reg.get('numero_reg', 'desconhecido')), version=1)
+                    await update.message.reply_text(f"❌ Falha ao processar a regulação `{reg_esc}`.", parse_mode="Markdown")
 
         except Exception as e:
-            logging.error(f"Erro no comando verificar: {e}")
-            await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
+            logging.error(f"Erro no comando verificar principal: {e}", exc_info=True)
+            await update.message.reply_text("❌ Ocorreu um erro ao acessar o banco de dados das suas regulações.")
 
 
 async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
