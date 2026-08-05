@@ -779,7 +779,7 @@ def obter_texto_instrucoes():
     )
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def comando_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = criar_menu_principal()
     await update.message.reply_text(
         "Olá! Escolha uma das opções abaixo no menu:",
@@ -960,7 +960,7 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
     BOT_APP = app
 
-    app.add_handler(CommandHandler("start", comando_start))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
     app.add_handler(CommandHandler("excluir", comando_excluir))
