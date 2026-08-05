@@ -779,7 +779,12 @@ def obter_texto_instrucoes():
     )
 
 
+# =====================================================================
+# INÍCIO DO BLOCO FINAL: COMANDOS DO BOT E INICIALIZAÇÃO
+# =====================================================================
+
 async def comando_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe o menu principal ao iniciar o bot."""
     reply_markup = criar_menu_principal()
     await update.message.reply_text(
         "Olá! Escolha uma das opções abaixo no menu:",
@@ -788,6 +793,7 @@ async def comando_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe as instruções de uso do bot."""
     await update.message.reply_text(
         obter_texto_instrucoes(),
         parse_mode="Markdown",
@@ -795,12 +801,18 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ==========================================
-# TRATAMENTO DE TEXTO / NÚMEROS SOLTOS
-# ==========================================
+async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Envia o link/botão para o formulário de cadastro."""
+    chat_id = update.effective_chat.id
+    await update.message.reply_text(
+        "📝 Clique no botão abaixo para abrir o **Formulário de Cadastro** e preencher os dados da regulação:",
+        parse_mode="Markdown",
+        reply_markup=obter_teclado_cadastro(chat_id)
+    )
+
+
 async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Trata mensagens de texto soltas enviadas no chat."""
-    import re
+    """Trata mensagens de texto soltas (ex: quando o usuário digita um número)."""
     texto_limpo = "".join(re.findall(r'\d+', update.message.text))
     
     if texto_limpo:
@@ -813,10 +825,8 @@ async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("⚠️ Por favor, envie um número de regulação válido ou escolha uma opção no Menu.")
 
 
-# ==========================================
-# COMANDO: VERIFICAR
-# ==========================================
 async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Consulta o status das regulações cadastradas."""
     chat_id = update.effective_chat.id
 
     if context.args:
@@ -944,10 +954,61 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text("❌ Ocorreu um erro ao consultar suas regulações.")
 
 
-# ==========================================
-# CONFIGURAÇÃO DO MENU DE COMANDOS DO BOT
-# ==========================================
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exclui uma regulação do Supabase."""
+    chat_id = update.effective_chat.id
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ *Como excluir uma regulação:*\n\nDigite o comando acompanhado do número da regulação.\nExemplo: `/excluir 12345678`",
+            parse_mode="Markdown"
+        )
+        return
+
+    numero_reg = "".join(re.findall(r'\d+', context.args[0]))
+
+    if not numero_reg:
+        await update.message.reply_text("⚠️ Número de regulação inválido.")
+        return
+
+    try:
+        resposta = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0")
+            .delete()
+            .eq("chat_id", str(chat_id))
+            .eq("numero_reg", str(numero_reg))
+            .execute()
+        )
+
+        if not resposta.data:
+            resposta = await asyncio.to_thread(
+                lambda: supabase.table("AlertaSUS_2.0")
+                .delete()
+                .eq("chat_id", int(chat_id))
+                .eq("numero_reg", str(numero_reg))
+                .execute()
+            )
+
+        reg_esc = escape_markdown(numero_reg, version=1)
+
+        if resposta.data:
+            await update.message.reply_text(
+                f"✅ Regulação `{reg_esc}` excluída com sucesso!",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ Regulação `{reg_esc}` não foi encontrada no seu cadastro.",
+                parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        logging.error(f"Erro ao excluir regulação {numero_reg}: {e}")
+        await update.message.reply_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
+
+
 async def configurar_menu_comandos(application):
+    """Configura o menu de comandos visível no Telegram."""
     try:
         from telegram import BotCommand
         comandos = [
@@ -959,7 +1020,10 @@ async def configurar_menu_comandos(application):
         await application.bot.set_my_commands(comandos)
     except Exception as e:
         logging.error(f"Erro ao configurar menu de comandos: {e}")
+
+
 def main():
+    """Função principal que inicia a aplicação do Telegram."""
     global BOT_APP, MAIN_LOOP
 
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
@@ -969,8 +1033,9 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
     BOT_APP = app
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", comando_start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
     app.add_handler(CommandHandler("verificar", comando_verificar_agora))
     app.add_handler(CommandHandler("excluir", comando_excluir))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_mensagem_texto))
