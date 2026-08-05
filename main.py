@@ -1015,7 +1015,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-    global BOT_APP, MAIN_LOOP
 
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
 
