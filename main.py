@@ -811,9 +811,20 @@ async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ==========================================
+# TRATAMENTO DE TEXTO / NÚMEROS / BOTÕES
+# ==========================================
 async def tratar_mensagem_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Trata mensagens de texto soltas (ex: quando o usuário digita um número)."""
-    texto_limpo = "".join(re.findall(r'\d+', update.message.text))
+    """Trata mensagens de texto soltas e cliques nos botões do menu."""
+    texto = update.message.text.strip()
+
+    # Se o usuário clicou no botão "Consultar Todos" (ou Vários) do teclado
+    if "Consultar" in texto or "Consultar Todos" in texto:
+        await comando_verificar_agora(update, context)
+        return
+
+    # Se o usuário enviou um número de regulação solto no chat
+    texto_limpo = "".join(re.findall(r'\d+', texto))
     
     if texto_limpo:
         await update.message.reply_text(
