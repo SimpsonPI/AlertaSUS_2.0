@@ -36,8 +36,6 @@ from telegram.ext import (
     ContextTypes
 )
 
-import app
-
 # Configuração de Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
