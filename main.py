@@ -36,6 +36,8 @@ from telegram.ext import (
     ContextTypes
 )
 
+import app
+
 # Configuração de Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -103,71 +105,82 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Instrui o usuário a enviar o Número da Regulação para cadastro."""
+    context.user_data["aguardando_regula"] = True
+    
     mensagem = (
-        "📝 *Cadastro no AlertaSUS*\n\n"
-        "Por favor, digite o número da sua regulação/protocolo do SUS para monitorar:"
+        "📝 *Cadastro no AlertaSUS 2.0*\n\n"
+        "Por favor, digite apenas o *Número da Regulação* (ID de regulação) que você deseja monitorar.\n\n"
+        "📌 *Exemplo:* `10829301`"
     )
     await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="Markdown")
 
 
-async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def processar_texto_usuario(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Processa as mensagens de texto enviadas pelo usuário (botões e entradas de cadastro)."""
+    texto = update.message.text.strip()
     chat_id = update.effective_chat.id
-    msg_espera = await update.message.reply_text("🔍 *Consultando base do SUS no Supabase...*", parse_mode="Markdown")
 
-    try:
-        # Busca na tabela AlertaSUS_2.0 usando a coluna id_do_chat
-        resposta = supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", chat_id).execute()
+    # 1. Trata os cliques nos botões do menu interativo
+    if texto == "📋 Consultar Todos":
+        await comando_verificar_agora(update, context)
+        return
+    elif texto == "➕ Cadastrar Nova":
+        await comando_cadastrar(update, context)
+        return
+    elif texto == "✏️ Corrigir ID":
+        await comando_corrigir(update, context)
+        return
+    elif texto == "❌ Excluir Regulação":
+        await comando_excluir(update, context)
+        return
+    elif texto == "ℹ️ Ajuda / Manual":
+        await comando_ajuda(update, context)
+        return
 
-        if resposta.data:
-            texto = "📋 *Seus Alertas e Regulações Encontrados:*\n\n"
-            for item in resposta.data:
-                paciente = item.get("nome_paciente", "Não informado")
-                regula_id = item.get("numero_reg", "Sem Nº")
-                status = item.get("status_anterior", "Sem status registrado")
-                
-                texto += (
-                    f"👤 *Paciente:* {paciente}\n"
-                    f"🔢 *Nº Regulação:* `{regula_id}`\n"
-                    f"📌 *Status:* {status}\n\n"
-                )
-            await msg_espera.edit_text(texto, reply_markup=TECLADO_MENU, parse_mode="Markdown")
-        else:
-            await msg_espera.edit_text(
-                "ℹ️ Nenhuma regulação cadastrada encontrada para a sua conta.\n"
-                "Use `/cadastrar` para registrar um novo acompanhamento.",
+    # 2. Se o bot estiver aguardando o envio do Número de Regulação
+    if context.user_data.get("aguardando_regula"):
+        # Remove caracteres não numéricos para segurança
+        numero_reg = re.sub(r"\D", "", texto)
+
+        if not numero_reg:
+            await update.message.reply_text(
+                "⚠️ Número de regulação inválido. Por favor, envie apenas os números da sua regulação.",
+                reply_markup=TECLADO_MENU
+            )
+            return
+
+        msg_aguarde = await update.message.reply_text("💾 *Cadastrando regulação no banco de dados...*", parse_mode="Markdown")
+
+        try:
+            # Insere no Supabase na tabela AlertaSUS_2.0
+            dados = {
+                "id_do_chat": chat_id,
+                "numero_reg": numero_reg,
+                "status_anterior": "Pendente de primeira verificação"
+            }
+            supabase.table("AlertaSUS_2.0").insert(dados).execute()
+
+            # Desmarca a flag de espera
+            context.user_data["aguardando_regula"] = False
+
+            await msg_aguarde.edit_text(
+                f"✅ *Regulação `{numero_reg}` cadastrada com sucesso!*\n\n"
+                "Você receberá alertas assim que houver atualização no status.",
                 reply_markup=TECLADO_MENU,
                 parse_mode="Markdown"
             )
+        except Exception as error:
+            print(f"❌ Erro ao cadastrar no Supabase: {error}", flush=True)
+            await msg_aguarde.edit_text(
+                "⚠️ Ocorreu um erro ao salvar sua regulação. Tente novamente em alguns instantes.",
+                reply_markup=TECLADO_MENU
+            )
+        return
 
-    except Exception as error:
-        print(f"❌ Erro Supabase (/verificar): {error}", flush=True)
-        await msg_espera.edit_text(
-            "⚠️ Não foi possível consultar o banco de dados no momento. Tente novamente mais tarde.",
-            reply_markup=TECLADO_MENU
-        )
-
-
-async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    chat_id = update.effective_chat.id
-    
-    try:
-        supabase.table("AlertaSUS_2.0").delete().eq("id_do_chat", chat_id).execute()
-        await update.message.reply_text("✅ Seus dados e alertas foram removidos com sucesso!", reply_markup=TECLADO_MENU)
-    except Exception as error:
-        print(f"❌ Erro Supabase (/excluir): {error}", flush=True)
-        await update.message.reply_text("⚠️ Falha ao remover dados. Entre em contato com o suporte.", reply_markup=TECLADO_MENU)
-
-
-async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Mensagem genérica se o usuário digitar algo fora de contexto
     await update.message.reply_text(
-        "✏️ Para atualizar seus dados, use o comando `/cadastrar` novamente para sobrescrever as informações.",
-        reply_markup=TECLADO_MENU
-    )
-
-
-async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "🤖 Não entendi esse comando. Utilize os botões do menu abaixo.",
+        "🤖 Opção não reconhecida. Utilize os botões do menu abaixo:",
         reply_markup=TECLADO_MENU
     )
 
@@ -1436,7 +1449,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^❌ Excluir Regulação$"), comando_excluir))
     app.add_handler(CommandHandler("corrigir", comando_corrigir))
     app.add_handler(MessageHandler(filters.Regex("^✏️ Corrigir ID$"), comando_corrigir))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensagem_texto_padrao))
+    # Registra o processador de texto e botões
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_texto_usuario))
     # Agendamento diário (08:00 e 18:00 no fuso de Teresina)
     job_queue = app.job_queue
     job_queue.run_daily(job_varredura_agendada, time=time(hour=8, minute=0, second=0, tzinfo=FUSO_HORARIO))
