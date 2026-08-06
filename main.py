@@ -6,6 +6,7 @@ import os
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from bs4 import BeautifulSoup
 
 from telegram import (
     Update,
