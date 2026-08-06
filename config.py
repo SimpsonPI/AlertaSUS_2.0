@@ -12,13 +12,14 @@ logging.basicConfig(
 
 load_dotenv()
 
-# Variáveis de Ambiente
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-APP_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
-SCRAPER_KEY = os.environ.get("SCRAPER_KEY")
+# Variáveis de Ambiente (Tenta pegar do servidor/env, e se não achar, usa o valor padrão informado)
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://nvuvyebrbnoldtimkozb.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_EmfKUviMXVqMh3EhiIPD4g_GnOqQlos")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAGDw7uw8Ttm04H8DcIeT0ZwfiaXWXEY6Us")
 PORT = int(os.environ.get("PORT", 10000))
+
+# URL Base do Formulário WebApp no GitHub Pages
+URL_FORMULARIO_PAGES = "https://simpsonpi.github.io/alerta-sus-bot/"
 
 if not TELEGRAM_BOT_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
