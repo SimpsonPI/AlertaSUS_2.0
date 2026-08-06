@@ -3,7 +3,6 @@ import json
 import logging
 import threading
 import asyncio
-import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram.ext import (
@@ -16,7 +15,6 @@ from telegram.ext import (
 
 import config
 from config import TELEGRAM_BOT_TOKEN, PORT
-import handlers
 from handlers import (
     start,
     comando_ajuda,
@@ -37,7 +35,6 @@ from handlers import (
     CORRIGIR_NOVO,
     EXCLUIR_ID,
     EXCLUIR_CONFIRM,
-    LISTA_BOTOES_MENU,
 )
 from database import executar_cadastro_regulacao
 
@@ -100,67 +97,60 @@ def main():
         config.MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(config.MAIN_LOOP)
 
-    # Handlers Globais Estáticos
+    # Handlers Globais
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
-
-    # 1. Cadastrar Nova
     app.add_handler(CommandHandler("cadastrar", abrir_link_cadastro))
-    app.add_handler(MessageHandler(filters.Regex("^(➕ Cadastrar Nova|Cadastrar nova)$"), abrir_link_cadastro))
-
-    # 2. Verificar Todas
     app.add_handler(CommandHandler("verificar", comando_verificar_todas))
-    app.add_handler(MessageHandler(filters.Regex("^(📋 Verificar Todas|Consultar Todos)$"), comando_verificar_todas))
 
-    # Filtro para fallbacks de menu
-    filtro_botoes = filters.Regex("^(" + "|".join([map_re for map_re in LISTA_BOTOES_MENU]) + ")$")
+    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
 
     # 3. Verificar Específico
     conv_verificar_especifico = ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex("^(🔍 Verificar Específico|Consultar Específico)$"), iniciar_verificar_especifico),
+            MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
             CommandHandler("consultar", iniciar_verificar_especifico),
         ],
         states={
             CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao), MessageHandler(filtro_botoes, cancelar_operacao)],
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
         allow_reentry=True
     )
 
     # 4. Corrigir ID
     conv_corrigir = ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex("^(✏️ Corrigir ID|Corrigir)$"), iniciar_corrigir),
+            MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
             CommandHandler("corrigir", iniciar_corrigir),
         ],
         states={
             CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_antigo)],
             CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_novo)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao), MessageHandler(filtro_botoes, cancelar_operacao)],
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
         allow_reentry=True
     )
 
-    # 5. Excluir ID com Confirmação
+    # 5. Excluir ID
     conv_excluir = ConversationHandler(
         entry_points=[
-            MessageHandler(filters.Regex("^(❌ Excluir Regulação|Excluir)$"), iniciar_excluir),
+            MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
             CommandHandler("excluir", iniciar_excluir),
         ],
         states={
             EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_id)],
             EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao), MessageHandler(filtro_botoes, cancelar_operacao)],
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
         allow_reentry=True
     )
 
     app.add_handler(conv_verificar_especifico)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
-
-    app.add_handler(MessageHandler(filters.Regex("^(ℹ️ Ajuda|Ajuda / Manual)$"), comando_ajuda))
 
     print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
     app.run_polling(drop_pending_updates=True)
