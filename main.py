@@ -138,12 +138,13 @@ def main():
     # Inicia Servidor Web em Background
     threading.Thread(target=run_health_check, daemon=True).start()
 
-    # Prepara Loop e App
+    # Prepara App
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
     config.BOT_APP = app
 
+    # Gerenciamento do Event Loop
     try:
-        config.MAIN_LOOP = asyncio.get_event_loop()
+        config.MAIN_LOOP = asyncio.get_running_loop()
     except RuntimeError:
         config.MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(config.MAIN_LOOP)
@@ -211,8 +212,9 @@ def main():
     app.add_handler(conv_exclusao)
     app.add_handler(conv_correcao)
 
-    # Outros Botões do Menu
-    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$") | CommandHandler("verificar"), comando_verificar_agora))
+    # Outros Botões e Comandos do Menu
+    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$"), comando_verificar_agora))
     app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda / Manual$"), comando_ajuda))
 
     print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
