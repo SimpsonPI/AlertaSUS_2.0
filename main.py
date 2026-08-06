@@ -3,7 +3,8 @@ import re
 import json
 import logging
 import threading
-import asyncio  # <--- ADICIONE ESTA LINHA
+import asyncio
+from datetime import time  # <--- ADICIONE ESTA LINHA
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
