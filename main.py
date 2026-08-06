@@ -38,7 +38,7 @@ from handlers import (
 )
 from database import executar_cadastro_regulacao
 
-# Servidor de Health Check
+# Servidor de Health Check e Endpoint HTTP de Cadastro
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
@@ -107,7 +107,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
     app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
 
-    # 3. Verificar Específico
+    # ConversationHandler: Verificar Específico
     conv_verificar_especifico = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
@@ -120,7 +120,7 @@ def main():
         allow_reentry=True
     )
 
-    # 4. Corrigir ID
+    # ConversationHandler: Corrigir ID
     conv_corrigir = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
@@ -134,7 +134,7 @@ def main():
         allow_reentry=True
     )
 
-    # 5. Excluir ID
+    # ConversationHandler: Excluir ID
     conv_excluir = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
