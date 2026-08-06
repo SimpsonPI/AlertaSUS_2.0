@@ -21,7 +21,7 @@ from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibic
     EXCLUIR_CONFIRM,
 ) = range(5)
 
-# URL do Formulário
+# URL Base do Formulário no GitHub Pages
 URL_FORMULARIO_PAGES = "https://simpsonpi.github.io/alerta-sus-bot/"
 
 # Teclado Principal
@@ -32,6 +32,15 @@ TECLADO_MENU = ReplyKeyboardMarkup(
         [KeyboardButton("❌ Excluir Regulação"), KeyboardButton("ℹ️ Ajuda")]
     ],
     resize_keyboard=True
+)
+
+# Teclado de Cancelamento Rápido
+TECLADO_CANCELAR = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("🚫 Cancelar Operação")]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=True
 )
 
 # Teclado de Confirmação de Exclusão
@@ -45,13 +54,16 @@ TECLADO_CONFIRMACAO = ReplyKeyboardMarkup(
 )
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Detecta se o usuário clicou em um botão do menu durante um fluxo e executa a ação imediatamente."""
+    """Intercapta cliques do menu ou cancelamentos durante conversas ativas."""
     if not update.message or not update.message.text:
         return False
 
     texto = update.message.text.strip()
 
-    if "Cadastrar Nova" in texto:
+    if "Cancelar" in texto or texto == "/cancelar":
+        await cancelar_operacao(update, context)
+        return True
+    elif "Cadastrar Nova" in texto:
         await abrir_link_cadastro(update, context)
         return True
     elif "Verificar Todas" in texto:
@@ -63,7 +75,7 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
     elif "Corrigir ID" in texto:
         await iniciar_corrigir(update, context)
         return True
-    elif "Excluir Regulação" in texto or "Excluir" in texto:
+    elif "Excluir Regulação" in texto:
         await iniciar_excluir(update, context)
         return True
     elif "Ajuda" in texto:
@@ -84,66 +96,37 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
             await iniciar_corrigir(update, context)
         elif texto.startswith("/excluir"):
             await iniciar_excluir(update, context)
-        elif texto.startswith("/cancelar"):
-            await cancelar_operacao(update, context)
         return True
 
     return False
 
-def _obter_campo(d: dict | None, *chaves, padrao="Não informado") -> str:
-    """Extrai o primeiro valor válido encontrado no dicionário baseado nas chaves passadas."""
-    if not d:
-        return padrao
-    for k in chaves:
-        val = d.get(k)
-        if val is not None and str(val).strip() != "":
-            return str(val).strip()
-    return padrao
-
 async def _buscar_regulacoes_db(chat_id: int) -> list:
-    """Busca as regulações no Supabase testando diferentes nomes de coluna e tipos de dados."""
-    colunas_chat = ["id_do_chat", "chat_id"]
-    valores_chat = [chat_id, str(chat_id)]
-
-    for col in colunas_chat:
-        for val in valores_chat:
-            try:
-                resp = await asyncio.to_thread(
-                    lambda c=col, v=val: supabase.table("AlertaSUS_2.0").select("*").eq(c, v).execute()
-                )
-                if resp and hasattr(resp, "data") and resp.data:
-                    logging.info(f"Busca DB bem-sucedida ({col}={val}): {len(resp.data)} registros encontrados.")
-                    return resp.data
-            except Exception as e:
-                logging.warning(f"Tentativa de busca DB ({col}={val}) falhou: {e}")
-
+    """Consulta diretamente no Supabase pela coluna id_do_chat."""
+    str_chat_id = str(chat_id)
     try:
         resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str_chat_id).execute()
         )
         if resp and hasattr(resp, "data") and resp.data:
-            filtrados = [
-                r for r in resp.data
-                if str(r.get("id_do_chat") or r.get("chat_id") or "").strip() == str(chat_id)
-            ]
-            return filtrados
+            return resp.data
     except Exception as e:
-        logging.error(f"Erro no fallback geral do banco de dados: {e}")
+        logging.error(f"Erro ao consultar Supabase (id_do_chat={str_chat_id}): {e}")
 
     return []
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = None) -> str:
-    """Gera a mensagem de status formatada em HTML extraindo os dados com fallback de chaves."""
+    """Mapeia exatamente as colunas reais da tabela AlertaSUS_2.0."""
     reg_db = reg_db or {}
 
-    nome_bruto = _obter_campo(reg_db, "nome_paciente", "nome", "paciente")
+    nome_bruto = reg_db.get("nome_paciente") or "Não informado"
     nome = escape(nome_paciente_exibicao(nome_bruto))
 
-    dt_bruta = _obter_campo(reg_db, "data_nascimento", "data_nasc", "nascimento")
+    dt_bruta = reg_db.get("data_nascimento") or "Não informada"
     dt_nasc = escape(formatar_data_br(dt_bruta))
 
-    email = escape(_obter_campo(reg_db, "email", "e-mail", "mail"))
-    celular = escape(_obter_campo(reg_db, "celular", "whatsapp", "telefone", "phone"))
+    # Atenção: a coluna no Supabase se chama 'e-mail'
+    email = escape(reg_db.get("e-mail") or reg_db.get("email") or "Não informado")
+    celular = escape(reg_db.get("celular") or "Não informado")
     num_esc = escape(str(numero_reg))
 
     status = escape(str(resultado.get("status_resumido") or resultado.get("situacao") or "Informada no portal"))
@@ -166,8 +149,10 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = Non
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
+    chat_id = update.effective_chat.id
     mensagem = (
-        "👋 Bem-vindo ao <b>AlertaSUS 2.0</b>!\n\n"
+        f"👋 Bem-vindo ao <b>AlertaSUS 2.0</b>!\n\n"
+        f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
         "Escolha uma opção no menu abaixo para começar:"
     )
     await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="HTML")
@@ -175,9 +160,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
+    chat_id = update.effective_chat.id
+    link_direto = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
     texto_ajuda = (
         "ℹ️ <b>Central de Ajuda - AlertaSUS 2.0</b>\n\n"
-        f"• <b>➕ Cadastrar Nova:</b> Acesse o formulário de cadastro web (<a href='{URL_FORMULARIO_PAGES}'>Abrir Formulário</a>).\n"
+        f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
+        f"• <b>➕ Cadastrar Nova:</b> Acesse o formulário (<a href='{link_direto}'>Abrir Formulário</a>).\n"
         "• <b>📋 Verificar Todas:</b> Consulta o status de todos os seus IDs cadastrados.\n"
         "• <b>🔍 Verificar Específico:</b> Consulta um único ID informado na hora.\n"
         "• <b>✏️ Corrigir ID:</b> Altera um ID antigo para um novo ID.\n"
@@ -188,18 +176,22 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return ConversationHandler.END
 
 async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ Operação cancelada.", reply_markup=TECLADO_MENU)
     context.user_data.clear()
+    await update.message.reply_text("❌ Operação cancelada.", reply_markup=TECLADO_MENU)
     return ConversationHandler.END
 
 # --- 1. CADASTRAR NOVA ---
 
 async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
+    chat_id = update.effective_chat.id
+    link_com_parametro = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
+
     mensagem = (
         "📝 <b>Formulário de Cadastro</b>\n\n"
-        "Para cadastrar uma nova regulação, acesse o formulário no link abaixo:\n\n"
-        f"🔗 <a href='{URL_FORMULARIO_PAGES}'>Clique aqui para abrir o Formulário de Cadastro</a>"
+        f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
+        "Clique no link abaixo para abrir o formulário preenchido automaticamente:\n\n"
+        f"🔗 <a href='{link_com_parametro}'>Clique aqui para abrir o Formulário de Cadastro</a>"
     )
     await update.message.reply_text(
         mensagem,
@@ -229,7 +221,7 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         await msg_espera.delete()
 
         for reg in regulacoes:
-            numero_reg = str(reg.get("numero_reg") or reg.get("numero_regulacao") or "").strip()
+            numero_reg = str(reg.get("numero_reg", "")).strip()
             if not numero_reg:
                 continue
 
@@ -246,10 +238,6 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
                     )
             except Exception as item_err:
                 logging.error(f"Erro ao processar regulação {numero_reg}: {item_err}")
-                await update.message.reply_text(
-                    f"⚠️ Falha ao consultar a regulação <code>{escape(numero_reg)}</code>.",
-                    parse_mode="HTML"
-                )
 
     except Exception as e:
         logging.error(f"Erro ao consultar regulações: {traceback.format_exc()}")
@@ -262,8 +250,8 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text(
-        "🔍 Digite o <b>Número da Regulação (ID)</b> que deseja consultar agora:\n\n"
-        "<i>(Ou digite /cancelar para sair)</i>",
+        "🔍 Digite o <b>Número da Regulação (ID)</b> que deseja consultar agora:",
+        reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
     return CONSULTAR_ID
@@ -277,7 +265,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     chat_id = update.effective_chat.id
 
     if not numero_reg:
-        await update.message.reply_text("⚠️ Por favor, digite apenas os números do ID da regulação:")
+        await update.message.reply_text("⚠️ Por favor, digite apenas os números do ID da regulação:", reply_markup=TECLADO_CANCELAR)
         return CONSULTAR_ID
 
     msg_espera = await update.message.reply_text(f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code> na FMS...", parse_mode="HTML")
@@ -286,12 +274,11 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     try:
         regs = await _buscar_regulacoes_db(chat_id)
         for r in regs:
-            id_no_banco = str(r.get("numero_reg") or r.get("numero_regulacao") or "").strip()
-            if id_no_banco == numero_reg:
+            if str(r.get("numero_reg", "")).strip() == numero_reg:
                 reg_db = r
                 break
     except Exception as err:
-        logging.warning(f"Aviso de busca de regulação específica no DB: {err}")
+        logging.warning(f"Aviso de busca DB: {err}")
 
     resultado = await consultar_status_fms(numero_reg)
     await msg_espera.delete()
@@ -311,8 +298,8 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text(
-        "✏️ <b>Passo 1 de 2:</b> Digite o <b>ID da Regulação ANTIGO</b> que você quer alterar:\n\n"
-        "<i>(Ou digite /cancelar para sair)</i>",
+        "✏️ <b>Passo 1 de 2:</b> Digite o <b>ID da Regulação ANTIGO</b> que você quer alterar:",
+        reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
     return CORRIGIR_ANTIGO
@@ -324,12 +311,13 @@ async def processar_corrigir_antigo(update: Update, context: ContextTypes.DEFAUL
     texto = update.message.text
     id_antigo = re.sub(r"\D", "", texto)
     if not id_antigo:
-        await update.message.reply_text("⚠️ Digite um ID numérico válido:")
+        await update.message.reply_text("⚠️ Digite um ID numérico válido:", reply_markup=TECLADO_CANCELAR)
         return CORRIGIR_ANTIGO
 
     context.user_data["id_antigo"] = id_antigo
     await update.message.reply_text(
         f"✏️ <b>Passo 2 de 2:</b> Digite o <b>NOVO ID</b> para substituir o ID <code>{escape(id_antigo)}</code>:",
+        reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
     return CORRIGIR_NOVO
@@ -344,39 +332,21 @@ async def processar_corrigir_novo(update: Update, context: ContextTypes.DEFAULT_
     id_antigo = context.user_data.get("id_antigo")
 
     if not id_novo:
-        await update.message.reply_text("⚠️ Digite um ID numérico válido para o novo código:")
+        await update.message.reply_text("⚠️ Digite um ID numérico válido:", reply_markup=TECLADO_CANCELAR)
         return CORRIGIR_NOVO
 
     try:
         resultado_fms = await consultar_status_fms(id_novo)
         novo_status = resultado_fms.get("status_resumido", "Pendente") if resultado_fms.get("sucesso") else "Atualizado"
 
-        alterou = False
-        colunas_chat = ["id_do_chat", "chat_id"]
-        valores_chat = [chat_id, str(chat_id)]
-        colunas_reg = ["numero_reg", "numero_regulacao"]
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").update({
+                "numero_reg": id_novo,
+                "status_anterior": novo_status
+            }).eq("id_do_chat", str(chat_id)).eq("numero_reg", str(id_antigo)).execute()
+        )
 
-        for col_c in colunas_chat:
-            for val_c in valores_chat:
-                for col_r in colunas_reg:
-                    try:
-                        resp = await asyncio.to_thread(
-                            lambda c_c=col_c, v_c=val_c, c_r=col_r: supabase.table("AlertaSUS_2.0").update({
-                                "numero_reg": id_novo,
-                                "status_anterior": novo_status
-                            }).eq(c_c, v_c).eq(c_r, id_antigo).execute()
-                        )
-                        if resp and getattr(resp, "data", None):
-                            alterou = True
-                            break
-                    except Exception:
-                        pass
-                if alterou:
-                    break
-            if alterou:
-                break
-
-        if alterou:
+        if resp and getattr(resp, "data", None):
             await update.message.reply_text(
                 f"✅ Regulação <code>{escape(id_antigo)}</code> alterada com sucesso para <code>{escape(id_novo)}</code>!",
                 reply_markup=TECLADO_MENU,
@@ -409,16 +379,16 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     itens_formatados = []
     for r in regs:
-        num = str(r.get("numero_reg") or r.get("numero_regulacao") or "Sem ID").strip()
-        nome = _obter_campo(r, "nome_paciente", "nome", "paciente", padrao="Sem nome")
+        num = str(r.get("numero_reg") or "Sem ID").strip()
+        nome = r.get("nome_paciente") or "Sem nome"
         itens_formatados.append(f"• <code>{escape(num)}</code> - {escape(nome)}")
 
     lista_txt = "\n".join(itens_formatados)
     await update.message.reply_text(
         f"❌ <b>Exclusão de Regulação</b>\n\n"
         f"Suas regulações salvas:\n{lista_txt}\n\n"
-        f"Digite o <b>Número da Regulação (ID)</b> que deseja excluir:\n"
-        f"<i>(Ou digite /cancelar para sair)</i>",
+        f"Digite o <b>Número da Regulação (ID)</b> que deseja excluir:",
+        reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
     return EXCLUIR_ID
@@ -431,7 +401,7 @@ async def processar_excluir_id(update: Update, context: ContextTypes.DEFAULT_TYP
     id_excluir = re.sub(r"\D", "", texto)
 
     if not id_excluir:
-        await update.message.reply_text("⚠️ Informe um ID de regulação numérico válido:")
+        await update.message.reply_text("⚠️ Informe um ID de regulação numérico válido:", reply_markup=TECLADO_CANCELAR)
         return EXCLUIR_ID
 
     context.user_data["id_excluir"] = id_excluir
@@ -452,40 +422,25 @@ async def processar_excluir_confirmacao(update: Update, context: ContextTypes.DE
     id_excluir = context.user_data.get("id_excluir")
 
     if "Sim" in texto:
-        excluiu = False
-        colunas_chat = ["id_do_chat", "chat_id"]
-        valores_chat = [chat_id, str(chat_id)]
-        colunas_reg = ["numero_reg", "numero_regulacao"]
-
-        for col_c in colunas_chat:
-            for val_c in valores_chat:
-                for col_r in colunas_reg:
-                    try:
-                        res = await asyncio.to_thread(
-                            lambda c_c=col_c, v_c=val_c, c_r=col_r: supabase.table("AlertaSUS_2.0").delete().eq(c_c, v_c).eq(c_r, id_excluir).execute()
-                        )
-                        if res and getattr(res, "data", None):
-                            excluiu = True
-                            break
-                    except Exception:
-                        pass
-                if excluiu:
-                    break
-            if excluiu:
-                break
-
-        if excluiu:
-            await update.message.reply_text(
-                f"✅ Regulação <code>{escape(id_excluir)}</code> excluída com sucesso!",
-                reply_markup=TECLADO_MENU,
-                parse_mode="HTML"
+        try:
+            res = await asyncio.to_thread(
+                lambda: supabase.table("AlertaSUS_2.0").delete().eq("id_do_chat", str(chat_id)).eq("numero_reg", str(id_excluir)).execute()
             )
-        else:
-            await update.message.reply_text(
-                f"⚠️ O ID <code>{escape(id_excluir)}</code> não foi localizado para exclusão.",
-                reply_markup=TECLADO_MENU,
-                parse_mode="HTML"
-            )
+            if res and getattr(res, "data", None):
+                await update.message.reply_text(
+                    f"✅ Regulação <code>{escape(id_excluir)}</code> excluída com sucesso!",
+                    reply_markup=TECLADO_MENU,
+                    parse_mode="HTML"
+                )
+            else:
+                await update.message.reply_text(
+                    f"⚠️ O ID <code>{escape(id_excluir)}</code> não foi localizado para exclusão.",
+                    reply_markup=TECLADO_MENU,
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            logging.error(f"Erro ao excluir ID {id_excluir}: {e}")
+            await update.message.reply_text("❌ Erro ao excluir do banco de dados.", reply_markup=TECLADO_MENU)
     else:
         await update.message.reply_text("❌ Exclusão cancelada.", reply_markup=TECLADO_MENU)
 
