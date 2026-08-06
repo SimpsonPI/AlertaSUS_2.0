@@ -4,7 +4,15 @@ import logging
 import traceback
 from html import escape
 
-from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton
+from telegram import (
+    Update,
+    BotCommand,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo
+)
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
@@ -100,33 +108,73 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
+# --- FUNÇÕES DE BUSCA NO SUPABASE ---
+
 async def _buscar_regulacoes_db(chat_id: int) -> list:
-    """Consulta diretamente no Supabase pela coluna id_do_chat."""
-    str_chat_id = str(chat_id)
+    """Busca todas as regulações do usuário no Supabase com fallback de varredura."""
+    str_chat_id = str(chat_id).strip()
     try:
+        # 1. Tentativa por filtro direto de texto/inteiro
         resp = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str_chat_id).execute()
         )
-        if resp and hasattr(resp, "data") and resp.data:
+        if resp and getattr(resp, "data", None) and len(resp.data) > 0:
             return resp.data
+
+        # 2. Fallback: Varredura da tabela para garantir correspondência exata
+        resp_all = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
+        )
+        if resp_all and getattr(resp_all, "data", None):
+            return [
+                row for row in resp_all.data
+                if str(row.get("id_do_chat", "")).strip() == str_chat_id
+            ]
     except Exception as e:
-        logging.error(f"Erro ao consultar Supabase (id_do_chat={str_chat_id}): {e}")
+        logging.error(f"Erro ao consultar Supabase (chat_id={str_chat_id}): {e}")
 
     return []
 
+async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict | None:
+    """Busca os dados de um paciente pelo número de regulação diretamente no Supabase."""
+    num_clean = str(numero_reg).strip()
+    try:
+        # 1. Tentativa por filtro direto no banco
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_clean).execute()
+        )
+        if resp and getattr(resp, "data", None) and len(resp.data) > 0:
+            return resp.data[0]
+
+        # 2. Fallback: Varredura de busca por igualdade
+        resp_all = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
+        )
+        if resp_all and getattr(resp_all, "data", None):
+            for row in resp_all.data:
+                if str(row.get("numero_reg", "")).strip() == num_clean:
+                    return row
+    except Exception as e:
+        logging.error(f"Erro ao buscar regulação por ID {num_clean}: {e}")
+
+    return None
+
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = None) -> str:
-    """Mapeia exatamente as colunas reais da tabela AlertaSUS_2.0."""
+    """Monta a resposta formatada usando os dados da tabela AlertaSUS_2.0."""
     reg_db = reg_db or {}
 
-    nome_bruto = reg_db.get("nome_paciente") or "Não informado"
-    nome = escape(nome_paciente_exibicao(nome_bruto))
+    nome_bruto = reg_db.get("nome_paciente") or reg_db.get("nome") or "Não informado"
+    nome = escape(nome_paciente_exibicao(str(nome_bruto)))
 
-    dt_bruta = reg_db.get("data_nascimento") or "Não informada"
-    dt_nasc = escape(formatar_data_br(dt_bruta))
+    dt_bruta = reg_db.get("data_nascimento") or reg_db.get("data_nasc") or "Não informada"
+    dt_nasc = escape(formatar_data_br(str(dt_bruta)))
 
-    # Atenção: a coluna no Supabase se chama 'e-mail'
-    email = escape(reg_db.get("e-mail") or reg_db.get("email") or "Não informado")
-    celular = escape(reg_db.get("celular") or "Não informado")
+    email_val = reg_db.get("e-mail") or reg_db.get("email") or "Não informado"
+    email = escape(str(email_val))
+
+    celular_val = reg_db.get("celular") or reg_db.get("telefone") or "Não informado"
+    celular = escape(str(celular_val))
+
     num_esc = escape(str(numero_reg))
 
     status = escape(str(resultado.get("status_resumido") or resultado.get("situacao") or "Informada no portal"))
@@ -161,18 +209,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     chat_id = update.effective_chat.id
-    link_direto = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
     texto_ajuda = (
         "ℹ️ <b>Central de Ajuda - AlertaSUS 2.0</b>\n\n"
         f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
-        f"• <b>➕ Cadastrar Nova:</b> Acesse o formulário (<a href='{link_direto}'>Abrir Formulário</a>).\n"
+        "• <b>➕ Cadastrar Nova:</b> Acesse o formulário interno no Telegram.\n"
         "• <b>📋 Verificar Todas:</b> Consulta o status de todos os seus IDs cadastrados.\n"
         "• <b>🔍 Verificar Específico:</b> Consulta um único ID informado na hora.\n"
         "• <b>✏️ Corrigir ID:</b> Altera um ID antigo para um novo ID.\n"
         "• <b>❌ Excluir Regulação:</b> Remove um ID mediante confirmação.\n\n"
         "⏰ <b>Varreduras automáticas:</b> Diariamente às 08:00 e 18:00."
     )
-    await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="HTML", disable_web_page_preview=True)
+    await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="HTML")
     return ConversationHandler.END
 
 async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -180,24 +227,27 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.reply_text("❌ Operação cancelada.", reply_markup=TECLADO_MENU)
     return ConversationHandler.END
 
-# --- 1. CADASTRAR NOVA ---
+# --- 1. CADASTRAR NOVA (WEB APP DENTRO DO BOT) ---
 
 async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     chat_id = update.effective_chat.id
     link_com_parametro = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
 
+    # Botão WebApp que abre o formulário internamente no Telegram
+    teclado_webapp = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Abrir Formulário no Bot", web_app=WebAppInfo(url=link_com_parametro))]
+    ])
+
     mensagem = (
         "📝 <b>Formulário de Cadastro</b>\n\n"
         f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
-        "Clique no link abaixo para abrir o formulário preenchido automaticamente:\n\n"
-        f"🔗 <a href='{link_com_parametro}'>Clique aqui para abrir o Formulário de Cadastro</a>"
+        "Clique no botão abaixo para abrir e preencher o formulário diretamente dentro do Telegram:"
     )
     await update.message.reply_text(
         mensagem,
-        reply_markup=TECLADO_MENU,
-        parse_mode="HTML",
-        disable_web_page_preview=True
+        reply_markup=teclado_webapp,
+        parse_mode="HTML"
     )
     return ConversationHandler.END
 
@@ -262,25 +312,17 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     texto = update.message.text
     numero_reg = re.sub(r"\D", "", texto)
-    chat_id = update.effective_chat.id
 
     if not numero_reg:
         await update.message.reply_text("⚠️ Por favor, digite apenas os números do ID da regulação:", reply_markup=TECLADO_CANCELAR)
         return CONSULTAR_ID
 
-    msg_espera = await update.message.reply_text(f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code> na FMS...", parse_mode="HTML")
+    msg_espera = await update.message.reply_text(f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code>...", parse_mode="HTML")
 
-    reg_db = None
-    try:
-        regs = await _buscar_regulacoes_db(chat_id)
-        for r in regs:
-            if str(r.get("numero_reg", "")).strip() == numero_reg:
-                reg_db = r
-                break
-    except Exception as err:
-        logging.warning(f"Aviso de busca DB: {err}")
-
+    # Busca direta do registro no Supabase pelo número da regulação
+    reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
     resultado = await consultar_status_fms(numero_reg)
+
     await msg_espera.delete()
 
     if resultado.get("sucesso"):
