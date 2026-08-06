@@ -8,9 +8,6 @@ from telegram import Update, BotCommand, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
-    MessageHandler,
-    filters,
 )
 from config import supabase
 from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibicao
@@ -24,9 +21,8 @@ from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibic
     EXCLUIR_CONFIRM,
 ) = range(5)
 
-# Links do Formulário de Cadastro
+# URL do Formulário
 URL_FORMULARIO_PAGES = "https://simpsonpi.github.io/alerta-sus-bot/"
-URL_GITHUB_REPO = "https://github.com/SimpsonPI/alerta-sus-bot"
 
 # Teclado Principal
 TECLADO_MENU = ReplyKeyboardMarkup(
@@ -47,6 +43,41 @@ TECLADO_CONFIRMACAO = ReplyKeyboardMarkup(
     resize_keyboard=True,
     one_time_keyboard=True
 )
+
+LISTA_BOTOES_MENU = [
+    "📋 Verificar Todas", "🔍 Verificar Específico", "➕ Cadastrar Nova",
+    "✏️ Corrigir ID", "❌ Excluir Regulação", "ℹ️ Ajuda",
+    "Consultar Todos", "Consultar Específico", "Cadastrar nova", "Corrigir", "Excluir", "Ajuda / Manual"
+]
+
+def e_comando_ou_botao(texto: str | None) -> bool:
+    """Verifica se o texto enviado é um botão do menu principal ou comando."""
+    if not texto:
+        return False
+    txt = texto.strip()
+    if txt.startswith("/") or txt in LISTA_BOTOES_MENU:
+        return True
+    return any(txt.startswith(emoji) for emoji in ["📋", "🔍", "➕", "✏️", "❌", "ℹ️"])
+
+async def _buscar_regulacoes_db(chat_id: int) -> list:
+    """Busca as regulações do usuário no Supabase com tolerância de tipos."""
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", chat_id).execute()
+        )
+        if resp.data:
+            return resp.data
+    except Exception as e:
+        logging.warning(f"Busca DB com chat_id int falhou: {e}")
+
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str(chat_id)).execute()
+        )
+        return resp.data or []
+    except Exception as e:
+        logging.error(f"Busca DB com chat_id str falhou: {e}")
+        raise e
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = None) -> str:
     """Gera mensagem de status formatada em HTML seguro."""
@@ -76,6 +107,7 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = Non
 # --- COMANDOS BÁSICOS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     nome_usuario = escape(update.effective_user.first_name or "Cidadão")
     mensagem = (
         f"👋 Olá, <b>{nome_usuario}</b>! Bem-vindo ao <b>AlertaSUS 2.0</b>!\n\n"
@@ -85,6 +117,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     texto_ajuda = (
         "ℹ️ <b>Central de Ajuda - AlertaSUS 2.0</b>\n\n"
         f"• <b>➕ Cadastrar Nova:</b> Acesse o formulário de cadastro web (<a href='{URL_FORMULARIO_PAGES}'>Abrir Formulário</a>).\n"
@@ -102,14 +135,14 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data.clear()
     return ConversationHandler.END
 
-# --- 1. CADASTRAR NOVA (LINK WEB) ---
+# --- 1. CADASTRAR NOVA (LINK WEB LIMPO) ---
 
 async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     mensagem = (
-        "📝 <b>Cadastro de Nova Regulação</b>\n\n"
-        "Para realizar o cadastro, acesse o formulário pelo link abaixo:\n\n"
-        f"🔗 <a href='{URL_FORMULARIO_PAGES}'><b>Clique aqui para abrir o Formulário de Cadastro</b></a>\n\n"
-        f"📌 <i>Repositório do projeto:</i> {URL_GITHUB_REPO}"
+        "📝 <b>Formulário de Cadastro</b>\n\n"
+        "Para cadastrar uma nova regulação, acesse o formulário abaixo:\n\n"
+        f"🔗 <a href='{URL_FORMULARIO_PAGES}'><b>Clique aqui para abrir o Formulário de Cadastro</b></a>"
     )
     await update.message.reply_text(
         mensagem,
@@ -122,14 +155,12 @@ async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE
 # --- 2. VERIFICAR TODAS ---
 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     chat_id = update.effective_chat.id
-    msg_espera = await update.message.reply_text("🔍 <b>Consultando todas as suas regulações no sistema...</b>", parse_mode="HTML")
+    msg_espera = await update.message.reply_text("🔍 <b>Consultando suas regulações no sistema...</b>", parse_mode="HTML")
 
     try:
-        resposta = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", chat_id).execute()
-        )
-        regulacoes = resposta.data or []
+        regulacoes = await _buscar_regulacoes_db(chat_id)
 
         if not regulacoes:
             await msg_espera.edit_text(
@@ -172,6 +203,7 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
 # --- 3. VERIFICAR ESPECÍFICO ---
 
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     await update.message.reply_text(
         "🔍 Digite o <b>Número da Regulação (ID)</b> que deseja consultar agora:\n\n"
         "<i>(Ou digite /cancelar para sair)</i>",
@@ -180,7 +212,11 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
     return CONSULTAR_ID
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    numero_reg = re.sub(r"\D", "", update.message.text)
+    texto = update.message.text
+    if e_comando_ou_botao(texto):
+        return ConversationHandler.END
+
+    numero_reg = re.sub(r"\D", "", texto)
     chat_id = update.effective_chat.id
 
     if not numero_reg:
@@ -191,15 +227,11 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     reg_db = None
     try:
-        resposta = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0")
-            .select("*")
-            .eq("id_do_chat", chat_id)
-            .eq("numero_reg", numero_reg)
-            .execute()
-        )
-        if resposta.data:
-            reg_db = resposta.data[0]
+        regs = await _buscar_regulacoes_db(chat_id)
+        for r in regs:
+            if str(r.get("numero_reg")).strip() == numero_reg:
+                reg_db = r
+                break
     except Exception as err:
         logging.warning(f"Aviso de busca no DB: {err}")
 
@@ -213,11 +245,13 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
         await update.message.reply_text(f"❌ {escape(msg_erro)}", parse_mode="HTML", reply_markup=TECLADO_MENU)
 
+    context.user_data.clear()
     return ConversationHandler.END
 
 # --- 4. CORRIGIR ID ---
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     await update.message.reply_text(
         "✏️ <b>Passo 1 de 2:</b> Digite o <b>ID da Regulação ANTIGO</b> que você quer alterar:\n\n"
         "<i>(Ou digite /cancelar para sair)</i>",
@@ -226,7 +260,11 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return CORRIGIR_ANTIGO
 
 async def processar_corrigir_antigo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    id_antigo = re.sub(r"\D", "", update.message.text)
+    texto = update.message.text
+    if e_comando_ou_botao(texto):
+        return ConversationHandler.END
+
+    id_antigo = re.sub(r"\D", "", texto)
     if not id_antigo:
         await update.message.reply_text("⚠️ Digite um ID numérico válido:")
         return CORRIGIR_ANTIGO
@@ -239,7 +277,11 @@ async def processar_corrigir_antigo(update: Update, context: ContextTypes.DEFAUL
     return CORRIGIR_NOVO
 
 async def processar_corrigir_novo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    id_novo = re.sub(r"\D", "", update.message.text)
+    texto = update.message.text
+    if e_comando_ou_botao(texto):
+        return ConversationHandler.END
+
+    id_novo = re.sub(r"\D", "", texto)
     chat_id = update.effective_chat.id
     id_antigo = context.user_data.get("id_antigo")
 
@@ -277,14 +319,16 @@ async def processar_corrigir_novo(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.clear()
     return ConversationHandler.END
 
-# --- 5. EXCLUIR REGULAÇÃO (COM CONFIRMAÇÃO) ---
+# --- 5. EXCLUIR REGULAÇÃO ---
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
     chat_id = update.effective_chat.id
-    resposta = await asyncio.to_thread(
-        lambda: supabase.table("AlertaSUS_2.0").select("numero_reg, nome_paciente").eq("id_do_chat", chat_id).execute()
-    )
-    regs = resposta.data or []
+
+    try:
+        regs = await _buscar_regulacoes_db(chat_id)
+    except Exception as e:
+        regs = []
 
     if not regs:
         await update.message.reply_text("ℹ️ Você não possui nenhuma regulação cadastrada para excluir.", reply_markup=TECLADO_MENU)
@@ -301,7 +345,11 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return EXCLUIR_ID
 
 async def processar_excluir_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    id_excluir = re.sub(r"\D", "", update.message.text)
+    texto = update.message.text
+    if e_comando_ou_botao(texto):
+        return ConversationHandler.END
+
+    id_excluir = re.sub(r"\D", "", texto)
 
     if not id_excluir:
         await update.message.reply_text("⚠️ Informe um ID de regulação numérico válido:")
@@ -317,11 +365,14 @@ async def processar_excluir_id(update: Update, context: ContextTypes.DEFAULT_TYP
     return EXCLUIR_CONFIRM
 
 async def processar_excluir_confirmacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    resposta_texto = update.message.text.strip()
+    texto = update.message.text.strip()
+    if e_comando_ou_botao(texto) and not ("Sim" in texto or "Não" in texto):
+        return ConversationHandler.END
+
     chat_id = update.effective_chat.id
     id_excluir = context.user_data.get("id_excluir")
 
-    if "Sim" in resposta_texto:
+    if "Sim" in texto:
         try:
             res = await asyncio.to_thread(
                 lambda: supabase.table("AlertaSUS_2.0").delete().eq("id_do_chat", chat_id).eq("numero_reg", id_excluir).execute()
