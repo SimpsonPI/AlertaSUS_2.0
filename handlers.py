@@ -17,7 +17,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
-from config import supabase
+from config import supabase, URL_FORMULARIO_PAGES
 from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibicao
 
 # Estados dos Fluxos Interativos
@@ -28,9 +28,6 @@ from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibic
     EXCLUIR_ID,
     EXCLUIR_CONFIRM,
 ) = range(5)
-
-# URL Base do Formulário no GitHub Pages
-URL_FORMULARIO_PAGES = "https://simpsonpi.github.io/alerta-sus-bot/"
 
 # Teclado Principal
 TECLADO_MENU = ReplyKeyboardMarkup(
@@ -232,6 +229,8 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     chat_id = update.effective_chat.id
+    
+    # Injeta dinamicamente o ID do Chat na URL do WebApp
     link_com_parametro = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
 
     # Botão WebApp que abre o formulário internamente no Telegram
