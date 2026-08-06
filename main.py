@@ -6,22 +6,48 @@ import asyncio
 import traceback
 from datetime import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
 
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    filters,
+    ContextTypes,
+)
 
 import config
 from config import TELEGRAM_BOT_TOKEN, FUSO_HORARIO, PORT, supabase
 from scraper import consultar_status_fms, montar_mensagem_regulacao
+import handlers
 from handlers import (
     start,
     comando_ajuda,
-    comando_cadastrar,
     comando_verificar_agora,
-    comando_excluir,
-    comando_corrigir,
-    processar_texto_usuario,
+    iniciar_consulta_especifica,
+    processar_consulta_especifica,
+    iniciar_cadastro,
+    cad_passo_regulacao,
+    cad_passo_nome,
+    cad_passo_data_nasc,
+    cad_passo_email,
+    cad_passo_finalizar,
+    iniciar_exclusao,
+    processar_exclusao,
+    iniciar_correcao,
+    correcao_passo_antigo,
+    correcao_passo_novo,
+    cancelar_operacao,
     configurar_menu_comandos,
+    CAD_REGULACAO,
+    CAD_NOME,
+    CAD_DATA_NASC,
+    CAD_EMAIL,
+    CAD_CELULAR,
+    CONSULTAR_ID,
+    EXCLUIR_ID,
+    CORRIGIR_ANTIGO,
+    CORRIGIR_NOVO,
 )
 from database import executar_cadastro_regulacao
 
@@ -122,20 +148,72 @@ def main():
         config.MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(config.MAIN_LOOP)
 
-    # Handlers
+    # Handlers Globais Estáticos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(CommandHandler("cadastrar", comando_cadastrar))
-    app.add_handler(CommandHandler("verificar", comando_verificar_agora))
-    app.add_handler(CommandHandler("excluir", comando_excluir))
-    app.add_handler(CommandHandler("corrigir", comando_corrigir))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_texto_usuario))
+    # ConversationHandler: CADASTRO COMPLETO
+    conv_cadastro = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), iniciar_cadastro),
+            CommandHandler("cadastrar", iniciar_cadastro),
+        ],
+        states={
+            CAD_REGULACAO: [MessageHandler(filters.TEXT & ~filters.COMMAND, cad_passo_regulacao)],
+            CAD_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, cad_passo_nome)],
+            CAD_DATA_NASC: [MessageHandler(filters.TEXT & ~filters.COMMAND, cad_passo_data_nasc)],
+            CAD_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, cad_passo_email)],
+            CAD_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, cad_passo_finalizar)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    )
 
-    # Agendamento Diário (08:00 e 18:00 - Teresina)
-    job_queue = app.job_queue
-    job_queue.run_daily(job_varredura_agendada, time=time(hour=8, minute=0, second=0, tzinfo=FUSO_HORARIO))
-    job_queue.run_daily(job_varredura_agendada, time=time(hour=18, minute=0, second=0, tzinfo=FUSO_HORARIO))
+    # ConversationHandler: CONSULTA ESPECÍFICA
+    conv_consulta_especifica = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^🔍 Consultar Específico$"), iniciar_consulta_especifica),
+            CommandHandler("consultar", iniciar_consulta_especifica),
+        ],
+        states={
+            CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_consulta_especifica)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    )
+
+    # ConversationHandler: EXCLUSÃO INTERATIVA
+    conv_exclusao = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_exclusao),
+            CommandHandler("excluir", iniciar_exclusao),
+        ],
+        states={
+            EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_exclusao)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    )
+
+    # ConversationHandler: CORREÇÃO DE ID INTERATIVA
+    conv_correcao = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_correcao),
+            CommandHandler("corrigir", iniciar_correcao),
+        ],
+        states={
+            CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, correcao_passo_antigo)],
+            CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, correcao_passo_novo)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    )
+
+    # Registra os ConversationHandlers
+    app.add_handler(conv_cadastro)
+    app.add_handler(conv_consulta_especifica)
+    app.add_handler(conv_exclusao)
+    app.add_handler(conv_correcao)
+
+    # Outros Botões do Menu
+    app.add_handler(MessageHandler(filters.Regex("^📋 Consultar Todos$") | CommandHandler("verificar"), comando_verificar_agora))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda / Manual$"), comando_ajuda))
 
     print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
     app.run_polling(drop_pending_updates=True)

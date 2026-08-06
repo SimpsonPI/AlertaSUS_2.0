@@ -8,15 +8,18 @@ async def executar_cadastro_regulacao(
     numero_reg: str,
     nome_paciente: str | None = None,
     data_nascimento: str | None = None,
-    email: str | None = None
+    email: str | None = None,
+    celular: str | None = None
 ) -> tuple[bool, str]:
     nome_salvar = nome_paciente or "Aguardando consulta"
     data_salvar = data_nascimento or "Não informada"
+    email_salvar = email if email and email.lower() != "pular" else "Não informado"
+    celular_salvar = celular if celular and celular.lower() != "pular" else "Não informado"
 
     resultado = await consultar_status_fms(numero_reg)
 
     if not resultado.get("sucesso"):
-        return False, "Não foi possível verificar a regulação na FMS Teresina neste momento."
+        return False, resultado.get("mensagem", "Não foi possível verificar a regulação na FMS Teresina neste momento.")
 
     try:
         dados_payload = {
@@ -25,7 +28,8 @@ async def executar_cadastro_regulacao(
             "status_anterior": resultado.get("status_resumido", "Pendente"),
             "nome_paciente": nome_salvar,
             "data_nascimento": data_salvar,
-            "email": email,
+            "email": email_salvar,
+            "celular": celular_salvar
         }
 
         existente = await asyncio.to_thread(
@@ -54,11 +58,12 @@ async def executar_cadastro_regulacao(
                 resultado,
                 nome_paciente=nome_salvar,
                 data_nascimento=data_salvar,
-                email=email,
+                email=email_salvar,
                 titulo="✅ *REGULAÇÃO CADASTRADA COM SUCESSO!*"
             )
             msg_retorno = (
                 f"{detalhes}\n\n"
+                f"📱 *Celular:* {celular_salvar}\n"
                 f"⏰ *Monitoramento automático:* varreduras diárias às *08:00* e *18:00*."
             )
 
@@ -69,4 +74,4 @@ async def executar_cadastro_regulacao(
 
     except Exception as e:
         logging.error(f"Erro ao salvar no Supabase: {e}")
-        return False, "Ocorreu um erro ao gravar no banco de dados."
+        return False, f"Ocorreu um erro ao gravar no banco de dados: {e}"
