@@ -1236,26 +1236,25 @@ async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_
     msg_espera = await update.message.reply_text("🔍 *Consultando base do SUS no Supabase...*", parse_mode="Markdown")
 
     try:
-        # Busca registros vinculados ao ID do Telegram do usuário
-        # Nota: Ajuste a tabela 'agendamentos' conforme a estrutura do seu Supabase
-        resposta = supabase.table("agendamentos").select("*").eq("telegram_id", chat_id).execute()
+        # Consulta ajustada com a tabela e coluna exatas do seu Supabase
+        resposta = supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", chat_id).execute()
 
         if resposta.data:
-            texto = "📋 *Seus Alertas e Agendamentos Encontrados:*\n\n"
+            texto = "📋 *Seus Alertas e Regulações Encontrados:*\n\n"
             for item in resposta.data:
-                procedimento = item.get("procedimento", "Procedimento não especificado")
-                status = item.get("status", "Em análise")
-                data_agendamento = item.get("data_agendamento", "Aguardando data")
+                paciente = item.get("nome_paciente", "Não informado")
+                regula_id = item.get("numero_reg", "Sem Nº")
+                status = item.get("status_anterior", "Sem status registrado")
                 
                 texto += (
-                    f"🔹 *Procedimento:* {procedimento}\n"
-                    f"   *Status:* {status}\n"
-                    f"   *Data:* {data_agendamento}\n\n"
+                    f"👤 *Paciente:* {paciente}\n"
+                    f"🔢 *Nº Regulação:* `{regula_id}`\n"
+                    f"📌 *Status:* {status}\n\n"
                 )
             await msg_espera.edit_text(texto, parse_mode="Markdown")
         else:
             await msg_espera.edit_text(
-                "ℹ️ Nenhuma solicitação pendente encontrada para a sua conta.\n"
+                "ℹ️ Nenhuma regulação cadastrada encontrada para a sua conta.\n"
                 "Use `/cadastrar` para registrar um novo acompanhamento.",
                 parse_mode="Markdown"
             )
