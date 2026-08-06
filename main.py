@@ -2,17 +2,11 @@ import os
 import re
 import json
 import logging
-import traceback
-import threading
-import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
-from datetime import time, datetime
+import os
 from zoneinfo import ZoneInfo
-import httpx
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
 from telegram import (
     Update,
     BotCommand,
@@ -46,13 +40,15 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 APP_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 
 if not TELEGRAM_BOT_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError(
-        "Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
+    raise ValueError("Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Fuso Horário de Teresina / Piauí (UTC-3)
 FUSO_HORARIO = ZoneInfo("America/Fortaleza")
+URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index"
+
+BOT_APP = None
+MAIN_LOOP = None
 
 # Endpoint oficial de busca da FMS Teresina
 URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/index"
@@ -60,7 +56,113 @@ URL_BUSCA_FMS = "https://agendamentos.sus.fms.pmt.pi.gov.br/detail_scheduling/in
 BOT_APP = None
 MAIN_LOOP = None
 
+# ==========================================
+# TECLADO INTERATIVO DE BOTÕES
+# ==========================================
+TECLADO_MENU = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("📋 Consultar Todos"), KeyboardButton("➕ Cadastrar Nova")],
+        [KeyboardButton("✏️ Corrigir ID"), KeyboardButton("❌ Excluir Regulação")],
+        [KeyboardButton("ℹ️ Ajuda / Manual")]
+    ],
+    resize_keyboard=True
+)
 
+# ==========================================
+# FUNÇÕES DOS COMANDOS (ATUALIZADAS)
+# ==========================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    nome_usuario = update.effective_user.first_name or "Cidadão"
+    mensagem = (
+        f"👋 Olá, *{nome_usuario}*! Bem-vindo ao *AlertaSUS 2.0*!\n\n"
+        "Escolha uma opção no menu abaixo para começar:"
+    )
+    await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="Markdown")
+
+
+async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    texto_ajuda = (
+        "ℹ️ *Central de Ajuda - AlertaSUS 2.0*\n\n"
+        "• Para verificar suas regulações, clique em *📋 Consultar Todos* ou use `/verificar`.\n"
+        "• Para cadastrar um novo acompanhamento, use `/cadastrar`.\n"
+        "• Para remover seus alertas, use `/excluir`."
+    )
+    await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="Markdown")
+
+
+async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mensagem = (
+        "📝 *Cadastro no AlertaSUS*\n\n"
+        "Por favor, digite o número da sua regulação/protocolo do SUS para monitorar:"
+    )
+    await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="Markdown")
+
+
+async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    msg_espera = await update.message.reply_text("🔍 *Consultando base do SUS no Supabase...*", parse_mode="Markdown")
+
+    try:
+        # Busca na tabela AlertaSUS_2.0 usando a coluna id_do_chat
+        resposta = supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", chat_id).execute()
+
+        if resposta.data:
+            texto = "📋 *Seus Alertas e Regulações Encontrados:*\n\n"
+            for item in resposta.data:
+                paciente = item.get("nome_paciente", "Não informado")
+                regula_id = item.get("numero_reg", "Sem Nº")
+                status = item.get("status_anterior", "Sem status registrado")
+                
+                texto += (
+                    f"👤 *Paciente:* {paciente}\n"
+                    f"🔢 *Nº Regulação:* `{regula_id}`\n"
+                    f"📌 *Status:* {status}\n\n"
+                )
+            await msg_espera.edit_text(texto, reply_markup=TECLADO_MENU, parse_mode="Markdown")
+        else:
+            await msg_espera.edit_text(
+                "ℹ️ Nenhuma regulação cadastrada encontrada para a sua conta.\n"
+                "Use `/cadastrar` para registrar um novo acompanhamento.",
+                reply_markup=TECLADO_MENU,
+                parse_mode="Markdown"
+            )
+
+    except Exception as error:
+        print(f"❌ Erro Supabase (/verificar): {error}", flush=True)
+        await msg_espera.edit_text(
+            "⚠️ Não foi possível consultar o banco de dados no momento. Tente novamente mais tarde.",
+            reply_markup=TECLADO_MENU
+        )
+
+
+async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+    
+    try:
+        supabase.table("AlertaSUS_2.0").delete().eq("id_do_chat", chat_id).execute()
+        await update.message.reply_text("✅ Seus dados e alertas foram removidos com sucesso!", reply_markup=TECLADO_MENU)
+    except Exception as error:
+        print(f"❌ Erro Supabase (/excluir): {error}", flush=True)
+        await update.message.reply_text("⚠️ Falha ao remover dados. Entre em contato com o suporte.", reply_markup=TECLADO_MENU)
+
+
+async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "✏️ Para atualizar seus dados, use o comando `/cadastrar` novamente para sobrescrever as informações.",
+        reply_markup=TECLADO_MENU
+    )
+
+
+async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "🤖 Não entendi esse comando. Utilize os botões do menu abaixo.",
+        reply_markup=TECLADO_MENU
+    )
+
+
+def job_varredura_agendada(context: ContextTypes.DEFAULT_TYPE) -> None:
+    print("🔄 Executando varredura periódica...", flush=True)
 # ==========================================
 # FUNÇÕES AUXILIARES DE FORMATAÇÃO
 # ==========================================
