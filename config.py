@@ -12,10 +12,11 @@ logging.basicConfig(
 
 load_dotenv()
 
-# Variáveis de Ambiente (Tenta pegar do servidor/env, e se não achar, usa o valor padrão informado)
+# Variáveis de Ambiente
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://nvuvyebrbnoldtimkozb.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_EmfKUviMXVqMh3EhiIPD4g_GnOqQlos")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAGDw7uw8Ttm04H8DcIeT0ZwfiaXWXEY6Us")
+SCRAPER_KEY = os.environ.get("SCRAPER_KEY", "")  # Adicionado para aturar a importacao do scraper.py
 PORT = int(os.environ.get("PORT", 10000))
 
 # URL Base do Formulário WebApp no GitHub Pages
