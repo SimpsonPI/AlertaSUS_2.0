@@ -3,7 +3,7 @@ import re
 import json
 import logging
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler  # <--- ADICIONE ESTA LINHA
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -18,6 +18,12 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
 )
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
 )
 from telegram.helpers import escape_markdown
 from telegram.ext import (
