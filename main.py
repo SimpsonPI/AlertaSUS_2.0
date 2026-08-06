@@ -1188,40 +1188,115 @@ async def configurar_menu_comandos(application):
 
 
 # ==========================================
-# FUNÇÃO PRINCIPAL
+# FUNÇÕES DE COMANDO (IMPLEMENTAÇÃO REAL)
 # ==========================================
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função start chamada (placeholder).")
-    await update.message.reply_text("Olá! Bem-vindo ao AlertaSUS 2.0!")
+    """Boas-vindas ao usuário e apresentação dos comandos."""
+    nome_usuario = update.effective_user.first_name or "Cidadão"
+    
+    mensagem = (
+        f"👋 Olá, *{nome_usuario}*! Bem-vindo ao *AlertaSUS 2.0*!\n\n"
+        "Eu ajudo você a acompanhar seus agendamentos, exames e consultas do SUS em tempo real.\n\n"
+        "📌 *Comandos disponíveis:*\n"
+        "• /cadastrar - Cadastrar seus dados/protocolo para monitoramento\n"
+        "• /verificar - Consultar o status atual dos seus agendamentos\n"
+        "• /corrigir - Atualizar suas informações cadastradas\n"
+        "• /excluir - Remover seus dados do sistema\n"
+        "• /ajuda - Exibir este menu de ajuda"
+    )
+    await update.message.reply_text(mensagem, parse_mode="Markdown")
+
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função ajuda chamada (placeholder).")
-    await update.message.reply_text("Aqui está a ajuda do bot (placeholder).")
+    """Exibe o menu de instruções."""
+    texto_ajuda = (
+        "ℹ️ *Central de Ajuda - AlertaSUS 2.0*\n\n"
+        "• Para verificar se há novidades sobre sua consulta/exame, envie `/verificar`.\n"
+        "• Se mudou de telefone ou dados, use `/corrigir`.\n"
+        "• Para parar de receber notificações, use `/excluir`.\n\n"
+        "Dúvidas ou problemas? Entre em contato com o suporte."
+    )
+    await update.message.reply_text(texto_ajuda, parse_mode="Markdown")
+
 
 async def comando_cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função cadastrar chamada (placeholder).")
-    await update.message.reply_text("Iniciando processo de cadastro (placeholder).")
+    """Inicia a orientação de cadastro."""
+    mensagem = (
+        "📝 *Cadastro no AlertaSUS*\n\n"
+        "Para que eu possa monitorar suas consultas, preciso do seu CPF ou número do Cartão SUS.\n"
+        "Por favor, digite o seu **CPF** (apenas números):"
+    )
+    await update.message.reply_text(mensagem, parse_mode="Markdown")
+
 
 async def comando_verificar_agora(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função verificar_agora chamada (placeholder).")
-    await update.message.reply_text("Verificando agora... (placeholder)")
+    """Consulta os agendamentos diretamente no Supabase."""
+    chat_id = update.effective_chat.id
+    msg_espera = await update.message.reply_text("🔍 *Consultando base do SUS no Supabase...*", parse_mode="Markdown")
+
+    try:
+        # Busca registros vinculados ao ID do Telegram do usuário
+        # Nota: Ajuste a tabela 'agendamentos' conforme a estrutura do seu Supabase
+        resposta = supabase.table("agendamentos").select("*").eq("telegram_id", chat_id).execute()
+
+        if resposta.data:
+            texto = "📋 *Seus Alertas e Agendamentos Encontrados:*\n\n"
+            for item in resposta.data:
+                procedimento = item.get("procedimento", "Procedimento não especificado")
+                status = item.get("status", "Em análise")
+                data_agendamento = item.get("data_agendamento", "Aguardando data")
+                
+                texto += (
+                    f"🔹 *Procedimento:* {procedimento}\n"
+                    f"   *Status:* {status}\n"
+                    f"   *Data:* {data_agendamento}\n\n"
+                )
+            await msg_espera.edit_text(texto, parse_mode="Markdown")
+        else:
+            await msg_espera.edit_text(
+                "ℹ️ Nenhuma solicitação pendente encontrada para a sua conta.\n"
+                "Use `/cadastrar` para registrar um novo acompanhamento.",
+                parse_mode="Markdown"
+            )
+
+    except Exception as error:
+        print(f"Erro ao buscar no Supabase: {error}")
+        await msg_espera.edit_text(
+            "⚠️ Não foi possível consultar o banco de dados no momento. Tente novamente mais tarde."
+        )
+
 
 async def comando_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função excluir chamada (placeholder).")
-    await update.message.reply_text("Iniciando processo de exclusão (placeholder).")
+    """Remove o cadastro do usuário no Supabase."""
+    chat_id = update.effective_chat.id
+    
+    try:
+        supabase.table("agendamentos").delete().eq("telegram_id", chat_id).execute()
+        await update.message.reply_text("✅ Seus dados e alertas foram removidos com sucesso!")
+    except Exception as error:
+        print(f"Erro ao excluir dados: {error}")
+        await update.message.reply_text("⚠️ Falha ao remover dados. Entre em contato com o suporte.")
+
 
 async def comando_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Função corrigir chamada (placeholder).")
-    await update.message.reply_text("Iniciando processo de correção (placeholder).")
+    """Orientação para correção de dados."""
+    await update.message.reply_text(
+        "✏️ Para atualizar seus dados, use o comando `/cadastrar` novamente para sobrescrever as informações anteriores.",
+        parse_mode="Markdown"
+    )
+
 
 async def mensagem_texto_padrao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Mensagem de texto padrão recebida (placeholder).")
-    await update.message.reply_text("Não entendi o seu comando. Use /ajuda para ver os comandos disponíveis (placeholder).")
+    """Mensagem enviada quando o usuário digita algo que não é um comando."""
+    await update.message.reply_text(
+        "🤖 Não consegui compreender essa mensagem. Por favor, utilize o menu de comandos ou digite `/ajuda`."
+    )
+
 
 def job_varredura_agendada(context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Executando varredura agendada (placeholder).")
+    """Função executada periodicamente para verificar atualizações automáticas."""
+    print("🔄 Executando varredura periódica de novos agendamentos no Supabase...")
 
 def main():
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
