@@ -3,6 +3,7 @@ import json
 import logging
 import threading
 import asyncio
+import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram.ext import (
@@ -10,6 +11,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ConversationHandler,
+    ContextTypes,
     filters,
 )
 
@@ -30,6 +32,7 @@ from handlers import (
     processar_excluir_confirmacao,
     cancelar_operacao,
     configurar_menu_comandos,
+    executar_varredura_automatica,
     CONSULTAR_ID,
     CORRIGIR_ANTIGO,
     CORRIGIR_NOVO,
@@ -83,13 +86,49 @@ def run_health_check():
     server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
     server.serve_forever()
 
+async def capturar_erro(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.error(f"Erro no processamento do Telegram: {context.error}")
+    print(f"❌ ERRO NO TELEGRAM: {context.error}", flush=True)
+
+async def loop_agendador_varredura(app):
+    """Loop em segundo plano que executa a varredura diariamente às 08:00 e 18:00."""
+    print("⏰ Agendador de varreduras automáticas ativado (08:00 e 18:00).", flush=True)
+    horarios_alvo = [8, 18]
+    horas_executadas_hoje = set()
+    ultimo_dia = None
+
+    while True:
+        agora = datetime.datetime.now()
+        hora_atual = agora.hour
+        data_atual = agora.date()
+
+        if ultimo_dia != data_atual:
+            horas_executadas_hoje.clear()
+            ultimo_dia = data_atual
+
+        if hora_atual in horarios_alvo and hora_atual not in horas_executadas_hoje:
+            horas_executadas_hoje.add(hora_atual)
+            print(f"⏰ Horário atingido ({hora_atual:02d}:00). Iniciando varredura...", flush=True)
+            await executar_varredura_automatica(app)
+
+        await asyncio.sleep(30)
+
+async def pos_inicializacao(app):
+    """Executado assim que o bot inicializa."""
+    await configurar_menu_comandos(app)
+    asyncio.create_task(loop_agendador_varredura(app))
+
 def main():
     print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
 
     threading.Thread(target=run_health_check, daemon=True).start()
 
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
+    # Criação da aplicação apontando para pos_inicializacao
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(pos_inicializacao).build()
     config.BOT_APP = app
+
+    # Registra o capturador de erros
+    app.add_error_handler(capturar_erro)
 
     try:
         config.MAIN_LOOP = asyncio.get_running_loop()
@@ -97,17 +136,14 @@ def main():
         config.MAIN_LOOP = asyncio.new_event_loop()
         asyncio.set_event_loop(config.MAIN_LOOP)
 
-    # Handlers Globais
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(CommandHandler("cadastrar", abrir_link_cadastro))
-    app.add_handler(CommandHandler("verificar", comando_verificar_todas))
+    # Handlers em Ordem
+    fallbacks_comuns = [
+        CommandHandler("cancelar", cancelar_operacao),
+        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+        MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas),
+        MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro),
+    ]
 
-    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro))
-    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
-    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
-
-    # ConversationHandler: Verificar Específico
     conv_verificar_especifico = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
@@ -116,11 +152,10 @@ def main():
         states={
             CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+        fallbacks=fallbacks_comuns,
         allow_reentry=True
     )
 
-    # ConversationHandler: Corrigir ID
     conv_corrigir = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
@@ -130,11 +165,10 @@ def main():
             CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_antigo)],
             CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_novo)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+        fallbacks=fallbacks_comuns,
         allow_reentry=True
     )
 
-    # ConversationHandler: Excluir ID
     conv_excluir = ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
@@ -144,13 +178,22 @@ def main():
             EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_id)],
             EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)],
         },
-        fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+        fallbacks=fallbacks_comuns,
         allow_reentry=True
     )
 
     app.add_handler(conv_verificar_especifico)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(CommandHandler("cadastrar", abrir_link_cadastro))
+    app.add_handler(CommandHandler("verificar", comando_verificar_todas))
+
+    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
 
     print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
     app.run_polling(drop_pending_updates=True)

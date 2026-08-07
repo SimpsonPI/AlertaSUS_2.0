@@ -59,7 +59,7 @@ TECLADO_CONFIRMACAO = ReplyKeyboardMarkup(
 )
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Intercapta cliques do menu ou cancelamentos durante conversas ativas."""
+    """Intercepta cliques do menu ou cancelamentos durante conversas ativas."""
     if not update.message or not update.message.text:
         return False
 
@@ -105,29 +105,66 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
+def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
+    """Monta a mensagem em HTML formatada apenas com Regulação, Paciente e Status."""
+    dados = resultado.get("dados", {})
+    
+    # Busca o nome do paciente no resultado do scraper ou do banco de dados
+    paciente = dados.get("paciente") or (reg_db.get("nome_paciente") if reg_db else None)
+    if not paciente or str(paciente).strip().lower() in ["none", "null", ""]:
+        paciente = "Não informado"
+    
+    # Status retornado pelo scraper
+    status = resultado.get("status_resumido", "Pendente")
+
+    return (
+        f"📋 <b>Regulação:</b> <code>{escape(numero_reg)}</code>\n"
+        f"👤 <b>Paciente:</b> {escape(str(paciente))}\n"
+        f"📊 <b>Status:</b> {escape(str(status))}"
+    )
+
+async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
+    """Busca uma regulação específica no Supabase pelo número da regulação."""
+    try:
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", str(numero_reg)).execute()
+        )
+        if resp and getattr(resp, "data", None) and len(resp.data) > 0:
+            return resp.data[0]
+    except Exception as e:
+        logging.error(f"Erro ao buscar regulação por ID ({numero_reg}): {e}")
+    return {}
+
 async def _buscar_regulacoes_db(chat_id: int) -> list:
     """Busca todas as regulações do usuário no Supabase com fallback de varredura."""
     str_chat_id = str(chat_id).strip()
     int_chat_id = int(chat_id)
     try:
-        # 1. Tentativa por filtro direto usando a coluna CORRETA "chat_id"
+        # Tenta buscar usando o nome correto da coluna: id_do_chat
         resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int_chat_id).execute()
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str_chat_id).execute()
         )
         if resp and getattr(resp, "data", None) and len(resp.data) > 0:
             return resp.data
 
-        # 2. Fallback: Varredura da tabela para garantir correspondência
+        # Segunda tentativa por número inteiro caso o banco guarde como int
+        resp_int = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", int_chat_id).execute()
+        )
+        if resp_int and getattr(resp_int, "data", None) and len(resp_int.data) > 0:
+            return resp_int.data
+
+        # Fallback de varredura geral comparando o campo id_do_chat
         resp_all = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
         )
         if resp_all and getattr(resp_all, "data", None):
             return [
                 row for row in resp_all.data
-                if str(row.get("chat_id", "")).strip() == str_chat_id
+                if str(row.get("id_do_chat", "")).strip() == str_chat_id
             ]
     except Exception as e:
-        logging.error(f"Erro ao consultar Supabase (chat_id={str_chat_id}): {e}")
+        logging.error(f"Erro ao consultar Supabase (id_do_chat={str_chat_id}): {e}")
 
     return []
 
@@ -171,10 +208,8 @@ async def abrir_link_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
     chat_id = update.effective_chat.id
     
-    # Injeta dinamicamente o ID do Chat na URL do WebApp
     link_com_parametro = f"{URL_FORMULARIO_PAGES}?chat_id={chat_id}"
 
-    # Botão WebApp que abre o formulário internamente no Telegram
     teclado_webapp = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Abrir Formulário no Bot", web_app=WebAppInfo(url=link_com_parametro))]
     ])
@@ -259,7 +294,6 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     msg_espera = await update.message.reply_text(f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code>...", parse_mode="HTML")
 
-    # Busca direta do registro no Supabase pelo número da regulação
     reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
     resultado = await consultar_status_fms(numero_reg)
 
@@ -325,7 +359,7 @@ async def processar_corrigir_novo(update: Update, context: ContextTypes.DEFAULT_
             lambda: supabase.table("AlertaSUS_2.0").update({
                 "numero_reg": id_novo,
                 "status_anterior": novo_status
-            }).eq("id_do_chat", str(chat_id)).eq("numero_reg", str(id_antigo)).execute()
+            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(id_antigo)).execute()
         )
 
         if resp and getattr(resp, "data", None):
@@ -406,7 +440,7 @@ async def processar_excluir_confirmacao(update: Update, context: ContextTypes.DE
     if "Sim" in texto:
         try:
             res = await asyncio.to_thread(
-                lambda: supabase.table("AlertaSUS_2.0").delete().eq("id_do_chat", str(chat_id)).eq("numero_reg", str(id_excluir)).execute()
+                lambda: supabase.table("AlertaSUS_2.0").delete().eq("chat_id", int(chat_id)).eq("numero_reg", str(id_excluir)).execute()
             )
             if res and getattr(res, "data", None):
                 await update.message.reply_text(
@@ -440,3 +474,67 @@ async def configurar_menu_comandos(application):
         BotCommand("ajuda", "Central de ajuda")
     ]
     await application.bot.set_my_commands(comandos)
+    # ------------------------------------------------------------------
+# NOVO TRECHO: Adicionar este bloco ao final do arquivo handlers.py
+# ------------------------------------------------------------------
+
+async def executar_varredura_automatica(app):
+    """Varre todas as regulações cadastradas e notifica os usuários sobre mudanças de status."""
+    logging.info("⏰ Iniciando varredura automática de regulações...")
+    try:
+        # Busca todas as regulações cadastradas no Supabase
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
+        )
+        dados_regulacoes = getattr(resp, "data", []) or []
+
+        for reg in dados_regulacoes:
+            chat_id = reg.get("chat_id")
+            numero_reg = str(reg.get("numero_reg", "")).strip()
+            status_anterior = str(reg.get("status_anterior", "") or "").strip()
+            nome_paciente = reg.get("nome_paciente", "Não informado")
+
+            if not chat_id or not numero_reg:
+                continue
+
+            try:
+                resultado = await consultar_status_fms(numero_reg)
+                if resultado.get("sucesso"):
+                    status_atual = str(resultado.get("status_resumido", "")).strip()
+
+                    # Se o status mudou em relação à consulta anterior
+                    if status_anterior and status_atual != status_anterior:
+                        # 1. Atualiza o novo status no banco de dados
+                        await asyncio.to_thread(
+                            lambda: supabase.table("AlertaSUS_2.0").update({
+                                "status_anterior": status_atual
+                            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(numero_reg)).execute()
+                        )
+
+                        # 2. Envia a notificação direta no Telegram
+                        msg_alerta = (
+                            f"🚨 <b>ALERTA DE ATUALIZAÇÃO!</b>\n\n"
+                            f"📋 <b>Regulação:</b> <code>{escape(numero_reg)}</code>\n"
+                            f"👤 <b>Paciente:</b> {escape(str(nome_paciente))}\n\n"
+                            f"📊 <b>Novo Status:</b>\n{escape(status_atual)}"
+                        )
+                        await app.bot.send_message(
+                            chat_id=int(chat_id),
+                            text=msg_alerta,
+                            parse_mode="HTML"
+                        )
+                        logging.info(f"Alerta enviado para Chat ID {chat_id} (Reg: {numero_reg})")
+                    
+                    elif not status_anterior:
+                        # Registra o primeiro status caso estivesse em branco
+                        await asyncio.to_thread(
+                            lambda: supabase.table("AlertaSUS_2.0").update({
+                                "status_anterior": status_atual
+                            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(numero_reg)).execute()
+                        )
+
+            except Exception as err_item:
+                logging.error(f"Erro ao verificar regulação {numero_reg}: {err_item}")
+
+    except Exception as e:
+        logging.error(f"Erro geral na varredura automática: {e}")

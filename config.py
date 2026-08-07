@@ -1,22 +1,19 @@
 import os
-import logging
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Configuração de Logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
+# Garante que o arquivo .env seja lido do disco
 load_dotenv()
 
 # Variáveis de Ambiente
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://nvuvyebrbnoldtimkozb.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_EmfKUviMXVqMh3EhiIPD4g_GnOqQlos")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAGDw7uw8Ttm04H8DcIeT0ZwfiaXWXEY6Us")
-SCRAPER_KEY = os.environ.get("SCRAPER_KEY", "")  # Adicionado para aturar a importacao do scraper.py
+
+# ⚠️ COLE O SEU NOVO TOKEN GERADO NO BOTFATHER AQUI ABAIXO:
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAEHC5-Fwcaqbq-SnnxiUT494OeziUQSP6k")
+
+SCRAPER_KEY = os.environ.get("SCRAPER_KEY", "")
 PORT = int(os.environ.get("PORT", 10000))
 
 # URL Base do Formulário WebApp no GitHub Pages
