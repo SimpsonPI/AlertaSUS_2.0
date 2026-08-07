@@ -105,90 +105,31 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
-# --- FUNÇÕES DE BUSCA NO SUPABASE ---
-
 async def _buscar_regulacoes_db(chat_id: int) -> list:
     """Busca todas as regulações do usuário no Supabase com fallback de varredura."""
     str_chat_id = str(chat_id).strip()
+    int_chat_id = int(chat_id)
     try:
-        # 1. Tentativa por filtro direto de texto/inteiro
+        # 1. Tentativa por filtro direto usando a coluna CORRETA "chat_id"
         resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str_chat_id).execute()
+            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int_chat_id).execute()
         )
         if resp and getattr(resp, "data", None) and len(resp.data) > 0:
             return resp.data
 
-        # 2. Fallback: Varredura da tabela para garantir correspondência exata
+        # 2. Fallback: Varredura da tabela para garantir correspondência
         resp_all = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
         )
         if resp_all and getattr(resp_all, "data", None):
             return [
                 row for row in resp_all.data
-                if str(row.get("id_do_chat", "")).strip() == str_chat_id
+                if str(row.get("chat_id", "")).strip() == str_chat_id
             ]
     except Exception as e:
         logging.error(f"Erro ao consultar Supabase (chat_id={str_chat_id}): {e}")
 
     return []
-
-async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict | None:
-    """Busca os dados de um paciente pelo número de regulação diretamente no Supabase."""
-    num_clean = str(numero_reg).strip()
-    try:
-        # 1. Tentativa por filtro direto no banco
-        resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", num_clean).execute()
-        )
-        if resp and getattr(resp, "data", None) and len(resp.data) > 0:
-            return resp.data[0]
-
-        # 2. Fallback: Varredura de busca por igualdade
-        resp_all = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
-        )
-        if resp_all and getattr(resp_all, "data", None):
-            for row in resp_all.data:
-                if str(row.get("numero_reg", "")).strip() == num_clean:
-                    return row
-    except Exception as e:
-        logging.error(f"Erro ao buscar regulação por ID {num_clean}: {e}")
-
-    return None
-
-def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict | None = None) -> str:
-    """Monta a resposta formatada usando os dados da tabela AlertaSUS_2.0."""
-    reg_db = reg_db or {}
-
-    nome_bruto = reg_db.get("nome_paciente") or reg_db.get("nome") or "Não informado"
-    nome = escape(nome_paciente_exibicao(str(nome_bruto)))
-
-    dt_bruta = reg_db.get("data_nascimento") or reg_db.get("data_nasc") or "Não informada"
-    dt_nasc = escape(formatar_data_br(str(dt_bruta)))
-
-    email_val = reg_db.get("e-mail") or reg_db.get("email") or "Não informado"
-    email = escape(str(email_val))
-
-    celular_val = reg_db.get("celular") or reg_db.get("telefone") or "Não informado"
-    celular = escape(str(celular_val))
-
-    num_esc = escape(str(numero_reg))
-
-    status = escape(str(resultado.get("status_resumido") or resultado.get("situacao") or "Informada no portal"))
-    posicao = escape(str(resultado.get("posicao_fila") or "Não informada"))
-    previsao = escape(str(resultado.get("previsao_atendimento") or "Não informada"))
-
-    return (
-        f"🏥 <b>SITUAÇÃO DA REGULAÇÃO</b>\n\n"
-        f"👤 <b>Paciente:</b> {nome}\n"
-        f"🎂 <b>Data de Nascimento:</b> {dt_nasc}\n"
-        f"📧 <b>E-mail:</b> {email}\n"
-        f"📱 <b>Celular:</b> {celular}\n"
-        f"🆔 <b>ID de Regulação:</b> <code>{num_esc}</code>\n\n"
-        f"📌 <b>Situação:</b> {status}\n"
-        f"• <b>Posição da Fila:</b> {posicao}\n"
-        f"• <b>Previsão de atendimento:</b> {previsao}"
-    )
 
 # --- COMANDOS BÁSICOS ---
 
