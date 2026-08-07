@@ -136,35 +136,26 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
     return {}
 
 async def _buscar_regulacoes_db(chat_id: int) -> list:
-    """Busca todas as regulações do usuário no Supabase com fallback de varredura."""
+    """Busca todas as regulações do usuário no Supabase sem depender do nome exato da coluna."""
     str_chat_id = str(chat_id).strip()
-    int_chat_id = int(chat_id)
     try:
-        # Tenta buscar usando o nome correto da coluna: id_do_chat
+        # Puxa os dados da tabela no Supabase
         resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", str_chat_id).execute()
-        )
-        if resp and getattr(resp, "data", None) and len(resp.data) > 0:
-            return resp.data
-
-        # Segunda tentativa por número inteiro caso o banco guarde como int
-        resp_int = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("id_do_chat", int_chat_id).execute()
-        )
-        if resp_int and getattr(resp_int, "data", None) and len(resp_int.data) > 0:
-            return resp_int.data
-
-        # Fallback de varredura geral comparando o campo id_do_chat
-        resp_all = await asyncio.to_thread(
             lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
         )
-        if resp_all and getattr(resp_all, "data", None):
-            return [
-                row for row in resp_all.data
-                if str(row.get("id_do_chat", "")).strip() == str_chat_id
-            ]
+        
+        if resp and getattr(resp, "data", None):
+            regulacoes_usuario = []
+            for row in resp.data:
+                # Transforma todos os valores da linha em texto e verifica se o seu chat_id está entre eles
+                valores_linha = [str(val).strip() for val in row.values()]
+                if str_chat_id in valores_linha:
+                    regulacoes_usuario.append(row)
+            
+            return regulacoes_usuario
+
     except Exception as e:
-        logging.error(f"Erro ao consultar Supabase (id_do_chat={str_chat_id}): {e}")
+        logging.error(f"Erro ao consultar Supabase: {e}")
 
     return []
 
