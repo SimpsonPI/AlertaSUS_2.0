@@ -42,10 +42,10 @@ from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibic
 # ==============================================================================
 # CONSTANTES DE TEXTO E AVISOS
 # ==============================================================================
-AVISO_PRIVADO = (
-    "> 🔒 **AVISO IMPORTANTE**\n"
-    "> Esta é uma **ferramenta privada e particular** desenvolvida para auxílio no acompanhamento de regulações.\n"
-    "> **Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)** ou órgãos governamentais."
+AVISO_PRIVADO_HTML = (
+    "<blockquote>🔒 <b>AVISO IMPORTANTE</b>\n"
+    "Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.\n"
+    "<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"
 )
 
 # ==========================================
@@ -246,14 +246,14 @@ async def _buscar_regulacoes_db(chat_id: int) -> list:
 # 4. COMANDOS BÁSICOS E NAVEGAÇÃO
 # ==========================================
 
-# 1. Definição da constante
+# 1. Definição da constante (uma única vez, antes de qualquer decorador)
 AVISO_PRIVADO_HTML = (
     "<blockquote>🔒 <b>AVISO IMPORTANTE</b>\n"
     "Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.\n"
     "<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"
 )
 
-# 2. Decorador colado diretamente na função
+# 2. Comando /start
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -268,24 +268,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+# 3. Comando /ajuda
 @rate_limit(max_mensagens=5, janela_segundos=60)
-# Mantenha essa constante no topo do arquivo (ou logo acima da função)
-# Coloque a constante assim (usando três aspas):
-AVISO_PRIVADO_HTML = """<blockquote>🔒 <b>AVISO IMPORTANTE</b>
-Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.
-<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"""
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     chat_id = update.effective_chat.id
-    mensagem = (
-        f"👋 Bem-vindo ao <b>AlertaSUS 2.0</b>!\n\n"
+    texto_ajuda = (
+        "ℹ️ <b>Central de Ajuda - AlertaSUS 2.0</b>\n\n"
         f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
         f"{AVISO_PRIVADO_HTML}\n\n"
-        "Escolha uma opção no menu abaixo para começar:"
+        "• <b>➕ Cadastrar Nova:</b> Cadastre seus dados e ID de Regulação passo a passo.\n"
+        "• <b>📋 Verificar Todas:</b> Consulta o status de todos os seus IDs cadastrados.\n"
+        "• <b>🔍 Verificar Específico:</b> Consulta um único ID informado na hora.\n"
+        "• <b>✏️ Corrigir ID:</b> Altera ID, Cartão SUS ou Nome de uma regulação de forma interativa.\n"
+        "• <b>❌ Excluir Regulação:</b> Remove um ID mediante confirmação.\n\n"
+        "⏰ <b>Varreduras automáticas:</b> Diariamente às 08:00 e 18:00."
     )
-    await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="HTML")
+    await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="HTML")
     return ConversationHandler.END
 
 
