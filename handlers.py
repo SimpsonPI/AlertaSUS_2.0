@@ -5,7 +5,7 @@ import traceback
 from html import escape
 from datetime import datetime
 
-# Importação do Módulo Antispam / Rate Limiting (Item 5)
+# Importação do Módulo Antispam / Rate Limiting
 from rate_limiter import rate_limit
 
 # 1. Componentes visuais do Telegram
@@ -28,6 +28,10 @@ from telegram.ext import (
     filters
 )
 
+# 3. Configurações e Scraper do projeto
+from config import supabase
+from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibicao
+
 # ==========================================
 # FUNÇÕES DE PROTEÇÃO E ANONIMIZAÇÃO (LGPD)
 # ==========================================
@@ -48,17 +52,17 @@ def mascarar_nome(nome: str) -> str:
     iniciais = [partes[0]] + [f"{p[0]}." for p in partes[1:]]
     return " ".join(iniciais)
 
-# 3. Configurações e Scraper do projeto
-from config import supabase
-from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibicao
 
 # ==========================================
 # 1. ESTADOS DOS FLUXOS INTERATIVOS
 # ==========================================
 (
     CONSULTAR_ID,
-    CORRIGIR_ANTIGO,
-    CORRIGIR_NOVO,
+    # --- ESTADOS DA CENTRAL DE CORREÇÃO INTERATIVA ---
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
+    # --- ESTADOS DE EXCLUSÃO ---
     EXCLUIR_ID,
     EXCLUIR_CONFIRM,
     # --- ESTADOS DO FORMULÁRIO INTERATIVO NO BOT ---
@@ -70,7 +74,7 @@ from scraper import consultar_status_fms, formatar_data_br, nome_paciente_exibic
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD
-) = range(13)
+) = range(14)
 
 # ==========================================
 # 2. TECLADOS DO BOT
@@ -248,7 +252,7 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         "• <b>➕ Cadastrar Nova:</b> Cadastre seus dados e ID de Regulação passo a passo.\n"
         "• <b>📋 Verificar Todas:</b> Consulta o status de todos os seus IDs cadastrados.\n"
         "• <b>🔍 Verificar Específico:</b> Consulta um único ID informado na hora.\n"
-        "• <b>✏️ Corrigir ID:</b> Altera um ID antigo para um novo ID.\n"
+        "• <b>✏️ Corrigir ID:</b> Altera ID, Cartão SUS ou Nome de uma regulação de forma interativa.\n"
         "• <b>❌ Excluir Regulação:</b> Remove um ID mediante confirmação.\n\n"
         "⏰ <b>Varreduras automáticas:</b> Diariamente às 08:00 e 18:00."
     )
@@ -293,7 +297,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await msg_aguarde.delete()
 
     if paciente_existente and paciente_existente.get("nome_paciente"):
-        # REUTILIZA OS DADOS EXISTENTES
         context.user_data['nome_paciente'] = paciente_existente.get("nome_paciente")
         context.user_data['celular'] = paciente_existente.get("celular")
         context.user_data['data_nascimento'] = paciente_existente.get("data_nascimento")
@@ -309,7 +312,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         return ETAPA_REGULACAO
     else:
-        # PACIENTE NOVO - Pede os dados cadastrais
         await update.message.reply_text(
             "ℹ️ Cartão SUS não localizado em cadastros anteriores.\n\n"
             "2️⃣ Por favor, digite o <b>Nome Completo do Paciente</b>:",
@@ -373,7 +375,6 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     context.user_data['numero_reg'] = regulacao
     
-    # Consulta na FMS para capturar o status real inicial
     msg_aguarde = await update.message.reply_text("🔍 <i>Buscando informações da regulação no SUS...</i>", parse_mode="HTML")
     try:
         resultado = await consultar_status_fms(regulacao)
@@ -564,76 +565,174 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     context.user_data.clear()
     return ConversationHandler.END
 
+# ==========================================
+# 7. CENTRAL DE CORREÇÃO INTERATIVA (BOTOES INLINE)
+# ==========================================
+
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Passo 1: Lista as regulações do usuário em botões interativos."""
     context.user_data.clear()
-    await update.message.reply_text(
-        "✏️ <b>Passo 1 de 2:</b> Digite o <b>ID da Regulação ANTIGO</b> que você quer alterar:",
-        reply_markup=TECLADO_CANCELAR,
-        parse_mode="HTML"
-    )
-    return CORRIGIR_ANTIGO
-
-async def processar_corrigir_antigo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context):
-        return ConversationHandler.END
-
-    texto = update.message.text
-    id_antigo = re.sub(r"\D", "", texto)
-    if not id_antigo:
-        await update.message.reply_text("⚠️ Digite um ID numérico válido:", reply_markup=TECLADO_CANCELAR)
-        return CORRIGIR_ANTIGO
-
-    context.user_data["id_antigo"] = id_antigo
-    await update.message.reply_text(
-        f"✏️ <b>Passo 2 de 2:</b> Digite o <b>NOVO ID</b> para substituir o ID <code>{escape(id_antigo)}</code>:",
-        reply_markup=TECLADO_CANCELAR,
-        parse_mode="HTML"
-    )
-    return CORRIGIR_NOVO
-
-async def processar_corrigir_novo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context):
-        return ConversationHandler.END
-
-    texto = update.message.text
-    id_novo = re.sub(r"\D", "", texto)
     chat_id = update.effective_chat.id
-    id_antigo = context.user_data.get("id_antigo")
+    regulacoes = await _buscar_regulacoes_db(chat_id)
 
-    if not id_novo:
-        await update.message.reply_text("⚠️ Digite um ID numérico válido:", reply_markup=TECLADO_CANCELAR)
-        return CORRIGIR_NOVO
+    if not regulacoes:
+        await update.message.reply_text(
+            "⚠️ Você não possui nenhuma regulação cadastrada para corrigir.",
+            reply_markup=TECLADO_MENU
+        )
+        return ConversationHandler.END
+
+    teclado = []
+    for reg in regulacoes:
+        num_reg = str(reg.get("numero_reg", "")).strip()
+        nome = mascarar_nome(str(reg.get("nome_paciente", "Não informado")))
+        
+        teclado.append([
+            InlineKeyboardButton(
+                f"📋 Regulação {num_reg} - {nome}", 
+                callback_data=f"corr_reg_{num_reg}"
+            )
+        ])
+
+    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corrigir")])
+
+    await update.message.reply_text(
+        "✏️ <b>Central de Correção de Dados</b>\n\n"
+        "Selecione abaixo qual regulação você deseja alterar:",
+        reply_markup=InlineKeyboardMarkup(teclado),
+        parse_mode="HTML"
+    )
+    return SELECIONAR_REGULACAO
+
+
+async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Passo 2: Captura a regulação selecionada e exibe os campos alteráveis."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancelar_corrigir":
+        await query.edit_message_text("❌ Operação de correção cancelada.")
+        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    numero_reg = query.data.replace("corr_reg_", "")
+    context.user_data["reg_corrigir"] = numero_reg
+
+    teclado = [
+        [InlineKeyboardButton("🆔 Número da Regulação", callback_data="corr_campo_numero_reg")],
+        [InlineKeyboardButton("👤 Nome do Paciente", callback_data="corr_campo_nome_paciente")],
+        [InlineKeyboardButton("💳 Cartão SUS", callback_data="corr_campo_numero_sus")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corrigir")]
+    ]
+
+    await query.edit_message_text(
+        f"📋 Regulação selecionada: <code>{escape(numero_reg)}</code>\n\n"
+        f"<b>Qual informação você deseja alterar?</b>",
+        reply_markup=InlineKeyboardMarkup(teclado),
+        parse_mode="HTML"
+    )
+    return SELECIONAR_CAMPO
+
+
+async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Passo 3: Registra o campo escolhido e solicita o novo valor ao usuário."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancelar_corrigir":
+        await query.edit_message_text("❌ Operação de correção cancelada.")
+        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    campo = query.data.replace("corr_campo_", "")
+    context.user_data["campo_corrigir"] = campo
+
+    mural_campos = {
+        "numero_reg": ("Número da Regulação", "digite o novo número da regulação (apenas números)"),
+        "nome_paciente": ("Nome do Paciente", "digite o nome completo do paciente"),
+        "numero_sus": ("Cartão SUS", "digite o novo número do Cartão SUS (15 dígitos)")
+    }
+
+    nome_amigavel, instrucao = mural_campos.get(campo, ("Campo", "digite o novo valor"))
+
+    await query.edit_message_text(
+        f"✏️ <b>Alterando: {nome_amigavel}</b>\n\n"
+        f"Por favor, {instrucao}:",
+        parse_mode="HTML"
+    )
+    return AGUARDAR_NOVO_VALOR
+
+
+async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Passo 4: Valida a entrada, grava no Supabase e confirma a alteração."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
+    novo_valor = update.message.text.strip()
+    numero_reg_antigo = context.user_data.get("reg_corrigir")
+    campo = context.user_data.get("campo_corrigir")
+    chat_id = update.effective_chat.id
+
+    if campo in ["numero_reg", "numero_sus"] and not novo_valor.isdigit():
+        await update.message.reply_text("⚠️ O valor digitado deve conter apenas números. Tente novamente:")
+        return AGUARDAR_NOVO_VALOR
+
+    if campo == "numero_sus" and len(novo_valor) != 15:
+        await update.message.reply_text("⚠️ O Cartão SUS deve possuir exatamente 15 dígitos. Tente novamente:")
+        return AGUARDAR_NOVO_VALOR
 
     try:
-        resultado_fms = await consultar_status_fms(id_novo)
-        novo_status = resultado_fms.get("status_resumido", "Atualizado") if resultado_fms.get("sucesso") else "Atualizado"
+        dados_atualizacao = {campo: novo_valor}
+
+        # Se for atualização do número da regulação, atualiza o status FMS correspondente
+        if campo == "numero_reg":
+            resultado_fms = await consultar_status_fms(novo_valor)
+            novo_status = resultado_fms.get("status_resumido", "Atualizado") if resultado_fms.get("sucesso") else "Atualizado"
+            dados_atualizacao["status_anterior"] = novo_status
 
         resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").update({
-                "numero_reg": id_novo,
-                "status_anterior": novo_status
-            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(id_antigo)).execute()
+            lambda: supabase.table("AlertaSUS_2.0")
+            .update(dados_atualizacao)
+            .eq("chat_id", int(chat_id))
+            .eq("numero_reg", str(numero_reg_antigo))
+            .execute()
         )
 
-        if resp and getattr(resp, "data", None):
-            await update.message.reply_text(
-                f"✅ Regulação <code>{escape(id_antigo)}</code> alterada com sucesso para <code>{escape(id_novo)}</code>!",
-                reply_markup=TECLADO_MENU,
-                parse_mode="HTML"
-            )
+        if campo == "nome_paciente":
+            exibicao_valor = mascarar_nome(novo_valor)
+        elif campo == "numero_sus":
+            exibicao_valor = mascarar_sus(novo_valor)
         else:
-            await update.message.reply_text(
-                f"⚠️ A regulação <code>{escape(id_antigo)}</code> não foi encontrada no seu cadastro.",
-                reply_markup=TECLADO_MENU,
-                parse_mode="HTML"
-            )
+            exibicao_valor = escape(novo_valor)
+
+        await update.message.reply_text(
+            f"✅ <b>Informação atualizada com sucesso!</b>\n\n"
+            f"📋 Regulação: <code>{escape(numero_reg_antigo)}</code>\n"
+            f"🔄 Novo valor: <b>{exibicao_valor}</b>",
+            reply_markup=TECLADO_MENU,
+            parse_mode="HTML"
+        )
+
     except Exception as e:
-        logging.error(f"Erro ao corrigir ID: {e}")
-        await update.message.reply_text("❌ Erro ao atualizar no banco de dados.", reply_markup=TECLADO_MENU)
+        logging.error(f"Erro ao atualizar registro no Supabase: {e}")
+        await update.message.reply_text("❌ Erro ao salvar a alteração no banco de dados. Tente novamente mais tarde.", reply_markup=TECLADO_MENU)
 
     context.user_data.clear()
     return ConversationHandler.END
+
+
+async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancela o fluxo de correção se acionado pelo fallback."""
+    context.user_data.clear()
+    await update.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
+    return ConversationHandler.END
+
+# ==========================================
+# 8. EXCLUSÃO DE REGULAÇÃO
+# ==========================================
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -716,7 +815,7 @@ async def processar_excluir_confirmacao(update: Update, context: ContextTypes.DE
     return ConversationHandler.END
 
 # ==========================================
-# 7. CONFIGURAÇÕES E VARREDURA AUTOMÁTICA
+# 9. CONFIGURAÇÕES E VARREDURA AUTOMÁTICA
 # ==========================================
 
 async def configurar_menu_comandos(application):
@@ -725,7 +824,7 @@ async def configurar_menu_comandos(application):
         BotCommand("cadastrar", "Cadastrar nova regulação"),
         BotCommand("verificar", "Verificar todas as regulações"),
         BotCommand("consultar", "Verificar regulação específica"),
-        BotCommand("corrigir", "Corrigir ID de regulação"),
+        BotCommand("corrigir", "Corrigir dados de regulação"),
         BotCommand("excluir", "Excluir regulação com confirmação"),
         BotCommand("ajuda", "Central de ajuda")
     ]
@@ -787,9 +886,8 @@ async def executar_varredura_automatica(app):
     except Exception as e:
         logging.error(f"Erro geral na varredura automática: {e}")
 
-
 # ==========================================
-# 8. FUNÇÕES LEGADAS (COMPATIBILIDADE)
+# 10. FUNÇÕES LEGADAS (COMPATIBILIDADE)
 # ==========================================
 async def abrir_link_cadastro(update, context):
     """Função legada para compatibilidade de importação com main.py."""

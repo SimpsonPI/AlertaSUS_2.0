@@ -1,27 +1,43 @@
 import os
-import json
 import logging
-import threading
-import asyncio
-import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ConversationHandler,
-    ContextTypes,
-    filters,
+    filters
 )
 
-import config
-from config import TELEGRAM_BOT_TOKEN, PORT
+from config import TELEGRAM_BOT_TOKEN
 from handlers import (
+    # Estados
+    CONSULTAR_ID,
+    CORRIGIR_ANTIGO,
+    CORRIGIR_NOVO,
+    EXCLUIR_ID,
+    EXCLUIR_CONFIRM,
+    ETAPA_SUS,
+    ETAPA_NOME,
+    ETAPA_CELULAR,
+    ETAPA_NASCIMENTO,
+    ETAPA_REGULACAO,
+    ETAPA_CBO,
+    ETAPA_PROCEDIMENTO,
+    ETAPA_LGPD,
+    # Comandos e Handlers
     start,
     comando_ajuda,
-    abrir_link_cadastro,
     comando_verificar_todas,
+    iniciar_cadastro_manual,
+    receber_sus,
+    receber_nome,
+    receber_celular,
+    receber_nascimento,
+    receber_regulacao,
+    receber_cbo,
+    receber_procedimento,
+    finalizar_cadastro,
     iniciar_verificar_especifico,
     processar_verificar_especifico,
     iniciar_corrigir,
@@ -32,168 +48,111 @@ from handlers import (
     processar_excluir_confirmacao,
     cancelar_operacao,
     configurar_menu_comandos,
-    executar_varredura_automatica,
-    CONSULTAR_ID,
-    CORRIGIR_ANTIGO,
-    CORRIGIR_NOVO,
-    EXCLUIR_ID,
-    EXCLUIR_CONFIRM,
+    executar_varredura_automatica
 )
-from database import executar_cadastro_regulacao
 
-# Servidor de Health Check e Endpoint HTTP de Cadastro
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        return
+# Configuração de Logs
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b"Bot AlertaSUS 2.0 ativo!")
+# --------------------------------------------------
+# CONVERSAÇÕES
+# --------------------------------------------------
 
-    def do_POST(self):
-        if self.path == "/api/cadastrar":
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
+# 1. Cadastro Interativo no Telegram
+conv_cadastro = ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), iniciar_cadastro_manual),
+        CommandHandler("cadastrar", iniciar_cadastro_manual)
+    ],
+    states={
+        ETAPA_SUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)],
+        ETAPA_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)],
+        ETAPA_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)],
+        ETAPA_NASCIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)],
+        ETAPA_REGULACAO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)],
+        ETAPA_CBO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)],
+        ETAPA_PROCEDIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)],
+        ETAPA_LGPD: [CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")]
+    },
+    fallbacks=[
+        CommandHandler("cancelar", cancelar_operacao),
+        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_operacao)
+    ],
+    allow_reentry=True,
+    per_message=False
+)
 
-            try:
-                dados = json.loads(post_data.decode('utf-8'))
-                chat_id = int(dados.get("chat_id"))
-                numero_reg = str(dados.get("numero_reg", "")).strip()
+# 2. Verificar Específico
+conv_verificar_especifico = ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
+        CommandHandler("consultar", iniciar_verificar_especifico)
+    ],
+    states={
+        CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)]
+    },
+    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    allow_reentry=True
+)
 
-                if not chat_id or not numero_reg:
-                    self._responder_json({"sucesso": False, "mensagem": "Dados incompletos."}, 400)
-                    return
+# 3. Corrigir ID
+conv_corrigir = ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
+        CommandHandler("corrigir", iniciar_corrigir)
+    ],
+    states={
+        CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_antigo)],
+        CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_novo)]
+    },
+    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    allow_reentry=True
+)
 
-                future = asyncio.run_coroutine_threadsafe(
-                    executar_cadastro_regulacao(chat_id, numero_reg), config.MAIN_LOOP
-                )
-                sucesso, mensagem = future.result(timeout=20.0)
-                self._responder_json({"sucesso": sucesso, "mensagem": mensagem})
+# 4. Excluir Regulação
+conv_excluir = ConversationHandler(
+    entry_points=[
+        MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
+        CommandHandler("excluir", iniciar_excluir)
+    ],
+    states={
+        EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_id)],
+        EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)]
+    },
+    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    allow_reentry=True
+)
 
-            except Exception as e:
-                logging.error(f"Erro na API de cadastro: {e}")
-                self._responder_json({"sucesso": False, "mensagem": str(e)}, 500)
-
-    def _responder_json(self, payload: dict, status_code: int = 200):
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(json.dumps(payload).encode("utf-8"))
-
-def run_health_check():
-    server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
-    server.serve_forever()
-
-async def capturar_erro(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logging.error(f"Erro no processamento do Telegram: {context.error}")
-    print(f"❌ ERRO NO TELEGRAM: {context.error}", flush=True)
-
-async def loop_agendador_varredura(app):
-    """Loop em segundo plano que executa a varredura diariamente às 08:00 e 18:00."""
-    print("⏰ Agendador de varreduras automáticas ativado (08:00 e 18:00).", flush=True)
-    horarios_alvo = [8, 18]
-    horas_executadas_hoje = set()
-    ultimo_dia = None
-
-    while True:
-        agora = datetime.datetime.now()
-        hora_atual = agora.hour
-        data_atual = agora.date()
-
-        if ultimo_dia != data_atual:
-            horas_executadas_hoje.clear()
-            ultimo_dia = data_atual
-
-        if hora_atual in horarios_alvo and hora_atual not in horas_executadas_hoje:
-            horas_executadas_hoje.add(hora_atual)
-            print(f"⏰ Horário atingido ({hora_atual:02d}:00). Iniciando varredura...", flush=True)
-            await executar_varredura_automatica(app)
-
-        await asyncio.sleep(30)
-
-async def pos_inicializacao(app):
-    """Executado assim que o bot inicializa."""
-    await configurar_menu_comandos(app)
-    asyncio.create_task(loop_agendador_varredura(app))
+# --------------------------------------------------
+# MAIN
+# --------------------------------------------------
 
 def main():
-    print("🤖 Iniciando AlertaSUS_2.0...", flush=True)
+    if not TELEGRAM_BOT_TOKEN:
+        logging.error("TELEGRAM_BOT_TOKEN não foi configurado.")
+        return
 
-    threading.Thread(target=run_health_check, daemon=True).start()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Criação da aplicação apontando para pos_inicializacao
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(pos_inicializacao).build()
-    config.BOT_APP = app
-
-    # Registra o capturador de erros
-    app.add_error_handler(capturar_erro)
-
-    try:
-        config.MAIN_LOOP = asyncio.get_running_loop()
-    except RuntimeError:
-        config.MAIN_LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(config.MAIN_LOOP)
-
-    # Handlers em Ordem
-    fallbacks_comuns = [
-        CommandHandler("cancelar", cancelar_operacao),
-        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-        MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas),
-        MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro),
-    ]
-
-    conv_verificar_especifico = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
-            CommandHandler("consultar", iniciar_verificar_especifico),
-        ],
-        states={
-            CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)],
-        },
-        fallbacks=fallbacks_comuns,
-        allow_reentry=True
-    )
-
-    conv_corrigir = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
-            CommandHandler("corrigir", iniciar_corrigir),
-        ],
-        states={
-            CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_antigo)],
-            CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_novo)],
-        },
-        fallbacks=fallbacks_comuns,
-        allow_reentry=True
-    )
-
-    conv_excluir = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
-            CommandHandler("excluir", iniciar_excluir),
-        ],
-        states={
-            EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_id)],
-            EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)],
-        },
-        fallbacks=fallbacks_comuns,
-        allow_reentry=True
-    )
-
+    # Adição dos Handlers de Conversação ao App
+    app.add_handler(conv_cadastro)
     app.add_handler(conv_verificar_especifico)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
 
+    # Handlers Diretos e Comandos de Menu
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(CommandHandler("cadastrar", abrir_link_cadastro))
     app.add_handler(CommandHandler("verificar", comando_verificar_todas))
 
-    app.add_handler(MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), abrir_link_cadastro))
     app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
     app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
+
+    # Configura o menu de comandos azul do Telegram ao iniciar
+    app.post_init = configurar_menu_comandos
 
     print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
     app.run_polling(drop_pending_updates=True)
