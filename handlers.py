@@ -153,20 +153,28 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
     return False
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Monta a mensagem em HTML formatada com Regulação, Paciente, CBO, Procedimento e Status."""
+    """Monta a mensagem em HTML formatada com Regulação, Cartão SUS (mascarado), Paciente (mascarado), CBO, Procedimento e Status."""
     dados = resultado.get("dados", {})
     
-    paciente = (reg_db.get("nome_paciente") if reg_db else None) or dados.get("paciente")
-    if not paciente or str(paciente).strip().lower() in ["none", "null", ""]:
-        paciente = "Não informado"
+    # 1. Nome do paciente com mascaramento LGPD
+    paciente_bruto = (reg_db.get("nome_paciente") if reg_db else None) or dados.get("paciente")
+    if not paciente_bruto or str(paciente_bruto).strip().lower() in ["none", "null", ""]:
+        paciente_exibicao = "Não informado"
+    else:
+        paciente_exibicao = mascarar_nome(str(paciente_bruto))
+
+    # 2. Cartão SUS com mascaramento LGPD
+    sus_bruto = reg_db.get("numero_sus") if reg_db else None
+    sus_exibicao = mascarar_sus(sus_bruto) if sus_bruto else "Não informado"
         
     cbo = (reg_db.get("cbo") if reg_db else None) or "Não informado"
     procedimento = (reg_db.get("procedimento") if reg_db else None) or dados.get("procedimento") or "Não informado"
     status = resultado.get("status_resumido", "Em processamento")
 
     return (
-        f"📋 <b>Regulação:</b> <code>{escape(numero_reg)}</code>\n"
-        f"👤 <b>Paciente:</b> {escape(str(paciente))}\n"
+        f"📋 <b>Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
+        f"💳 <b>Cartão SUS:</b> <code>{escape(sus_exibicao)}</code>\n"
+        f"👤 <b>Paciente:</b> {escape(paciente_exibicao)}\n"
         f"🩺 <b>CBO:</b> {escape(str(cbo))}\n"
         f"📑 <b>Procedimento:</b> {escape(str(procedimento))}\n"
         f"📊 <b>Status:</b> {escape(str(status))}"
