@@ -1,18 +1,16 @@
 def buscar_regulacoes_por_chat_id(chat_id):
-    """
-    Busca todas as regulações cadastradas para um determinado chat_id no Supabase.
-    """
+    """Busca regulações no Supabase tratando o chat_id como int e str."""
     try:
-        # Consulta a tabela AlertaSUS_2.0 filtrando pelo chat_id
-        resposta = (
-            supabase.table("AlertaSUS_2.0")
-            .select("*")
-            .eq("chat_id", chat_id)
-            .execute()
-        )
-        return resposta.data if resposta.data else []
+        # Tenta buscar como int/BigInt
+        resposta = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int(chat_id)).execute()
+        if resposta.data:
+            return resposta.data
+            
+        # Se não achar, tenta buscar como texto/string
+        resposta_str = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", str(chat_id)).execute()
+        return resposta_str.data if resposta_str.data else []
     except Exception as e:
-        print(f"Erro ao buscar regulações para o chat_id {chat_id}: {e}", flush=True)
+        print(f"Erro ao buscar regulações no Supabase: {e}", flush=True)
         return []
 
 
