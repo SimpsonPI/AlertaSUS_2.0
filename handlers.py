@@ -736,37 +736,46 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Lista as regulações salvas como botões clicáveis para exclusão."""
-    chat_id = update.effective_chat.id
-    regulacoes = buscar_regulacoes_por_chat_id(chat_id)
+    try:
+        chat_id = update.effective_chat.id
+        print(f"DEBUG: Iniciando exclusão para o chat_id {chat_id}", flush=True)
 
-    if not regulacoes:
-        mensagem = "⚠️ **Nenhuma regulação encontrada para o seu ID de chat.**"
+        regulacoes = buscar_regulacoes_por_chat_id(chat_id)
+
+        if not regulacoes:
+            mensagem = "⚠️ **Nenhuma regulação encontrada para o seu ID de chat.**"
+            if update.callback_query:
+                await update.callback_query.answer()
+                await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown")
+            else:
+                await update.message.reply_text(mensagem, parse_mode="Markdown")
+            return ConversationHandler.END
+
+        keyboard = []
+        for reg in regulacoes:
+            num_reg = reg.get("numero_regulacao", "N/A")
+            nome = reg.get("nome_paciente", "Sem nome")
+            texto_botao = f"🗑️ {num_reg} - {nome}"
+            keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
+
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excluir")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        texto = "❌ **Exclusão de Regulação**\n\nClique na regulação que deseja excluir:"
+
         if update.callback_query:
             await update.callback_query.answer()
-            await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown")
+            await update.callback_query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
         else:
-            await update.message.reply_text(mensagem, parse_mode="Markdown")
+            await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
+
+        return SELECIONAR_REGULACAO_EXCLUIR
+
+    except Exception as e:
+        print(f"ERRO em iniciar_excluir: {e}", flush=True)
+        if update.message:
+            await update.message.reply_text(f"⚠️ Ocorreu um erro ao carregar as regulações: `{e}`", parse_mode="Markdown")
         return ConversationHandler.END
-
-    keyboard = []
-    for reg in regulacoes:
-        num_reg = reg.get("numero_regulacao", "N/A")
-        nome = reg.get("nome_paciente", "Sem nome")
-        texto_botao = f"🗑️ {num_reg} - {nome}"
-        keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
-
-    keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excluir")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    texto = "❌ **Exclusão de Regulação**\n\nClique na regulação que deseja excluir:"
-
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
-
-    return SELECIONAR_REGULACAO_EXCLUIR
 
 
 async def selecionar_regulacao_excluir_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -777,6 +786,24 @@ async def selecionar_regulacao_excluir_callback(update: Update, context: Context
     if query.data == "cancelar_excluir":
         await query.edit_message_text("❌ **Operação cancelada.**", parse_mode="Markdown")
         return ConversationHandler.END
+
+    num_reg = query.data.replace("excluir_sel_", "")
+    context.user_data["regulacao_para_excluir"] = num_reg
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Confirmar Exclusão", callback_data="confirmar_exclusao")],
+        [InlineKeyboardButton("🚫 Cancelar", callback_data="cancelar_excluir")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    texto = (
+        f"⚠️ **Atenção!**\n\n"
+        f"Tem certeza que deseja excluir a regulação **{num_reg}**?\n"
+        f"Esta ação não poderá ser desfeita."
+    )
+
+    await query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
+    return CONFIRMAR_EXCLUSAO
 
     num_reg = query.data.replace("excluir_sel_", "")
     context.user_data["regulacao_para_excluir"] = num_reg
