@@ -731,86 +731,109 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 # ==========================================
-# 8. EXCLUSÃO DE REGULAÇÃO
+# EXCLUSÃO INTERATIVA DE REGULAÇÃO
 # ==========================================
 
-@rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()
+    """Lista as regulações salvas como botões clicáveis para exclusão."""
     chat_id = update.effective_chat.id
+    regulacoes = buscar_regulacoes_por_chat_id(chat_id)
 
-    regs = await _buscar_regulacoes_db(chat_id)
-    if not regs:
-        await update.message.reply_text("ℹ️ Você não possui nenhuma regulação cadastrada para excluir.", reply_markup=TECLADO_MENU)
+    if not regulacoes:
+        mensagem = "⚠️ **Nenhuma regulação encontrada para o seu ID de chat.**"
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(mensagem, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(mensagem, parse_mode="Markdown")
         return ConversationHandler.END
 
-    itens_formatados = []
-    for r in regs:
-        num = str(r.get("numero_reg") or "Sem ID").strip()
-        nome = r.get("nome_paciente") or "Sem nome"
-        itens_formatados.append(f"• <code>{escape(num)}</code> - {escape(nome)}")
+    keyboard = []
+    for reg in regulacoes:
+        num_reg = reg.get("numero_regulacao", "N/A")
+        nome = reg.get("nome_paciente", "Sem nome")
+        # Texto do botão: "10829301 - RIVKA SIMPSON..."
+        texto_botao = f"🗑️ {num_reg} - {nome}"
+        keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
 
-    lista_txt = "\n".join(itens_formatados)
-    await update.message.reply_text(
-        f"❌ <b>Exclusão de Regulação</b>\n\n"
-        f"Suas regulações salvas:\n{lista_txt}\n\n"
-        f"Digite o <b>Número da Regulação (ID)</b> que deseja excluir:",
-        reply_markup=TECLADO_CANCELAR,
-        parse_mode="HTML"
-    )
-    return EXCLUIR_ID
+    keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excluir")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-async def processar_excluir_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context):
-        return ConversationHandler.END
+    texto = "❌ **Exclusão de Regulação**\n\nClique na regulação que deseja excluir:"
 
-    texto = update.message.text
-    id_excluir = re.sub(r"\D", "", texto)
-
-    if not id_excluir:
-        await update.message.reply_text("⚠️ Informe um ID de regulação numérico válido:", reply_markup=TECLADO_CANCELAR)
-        return EXCLUIR_ID
-
-    context.user_data["id_excluir"] = id_excluir
-    await update.message.reply_text(
-        f"⚠️ <b>CONFIRMAÇÃO DE EXCLUSÃO</b>\n\n"
-        f"Tem certeza de que deseja excluir permanentemente o ID <code>{escape(id_excluir)}</code>?",
-        reply_markup=TECLADO_CONFIRMACAO,
-        parse_mode="HTML"
-    )
-    return EXCLUIR_CONFIRM
-
-async def processar_excluir_confirmacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context):
-        return ConversationHandler.END
-
-    texto = update.message.text.strip()
-    chat_id = update.effective_chat.id
-    id_excluir = context.user_data.get("id_excluir")
-
-    if "Sim" in texto:
-        try:
-            res = await asyncio.to_thread(
-                lambda: supabase.table("AlertaSUS_2.0").delete().eq("chat_id", int(chat_id)).eq("numero_reg", str(id_excluir)).execute()
-            )
-            if res and getattr(res, "data", None):
-                await update.message.reply_text(
-                    f"✅ Regulação <code>{escape(id_excluir)}</code> excluída com sucesso!",
-                    reply_markup=TECLADO_MENU,
-                    parse_mode="HTML"
-                )
-            else:
-                await update.message.reply_text(
-                    f"⚠️ O ID <code>{escape(id_excluir)}</code> não foi localizado para exclusão.",
-                    reply_markup=TECLADO_MENU,
-                    parse_mode="HTML"
-                )
-        except Exception as e:
-            logging.error(f"Erro ao excluir ID {id_excluir}: {e}")
-            await update.message.reply_text("❌ Erro ao excluir do banco de dados.", reply_markup=TECLADO_MENU)
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
     else:
-        await update.message.reply_text("❌ Exclusão cancelada.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
 
+    return SELECIONAR_REGULACAO_EXCLUIR
+
+
+async def selecionar_regulacao_excluir_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Solicita a confirmação de exclusão para a regulação selecionada."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancelar_excluir":
+        await query.edit_message_text("❌ **Operação cancelada.**", parse_mode="Markdown")
+        return ConversationHandler.END
+
+    num_reg = query.data.replace("excluir_sel_", "")
+    context.user_data["regulacao_para_excluir"] = num_reg
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Confirmar Exclusão", callback_data="confirmar_exclusao")],
+        [InlineKeyboardButton("🚫 Cancelar", callback_data="cancelar_excluir")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    texto = (
+        f"⚠️ **Atenção!**\n\n"
+        f"Tem certeza que deseja excluir a regulação **{num_reg}**?\n"
+        f"Esta ação não poderá ser desfeita."
+    )
+
+    await query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
+    return CONFIRMAR_EXCLUSAO
+
+
+async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Executa a exclusão no banco de dados após a confirmação."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancelar_excluir":
+        await query.edit_message_text("❌ **Operação cancelada.**", parse_mode="Markdown")
+        return ConversationHandler.END
+
+    chat_id = update.effective_chat.id
+    num_reg = context.user_data.get("regulacao_para_excluir")
+
+    if not num_reg:
+        await query.edit_message_text("⚠️ **Erro ao identificar a regulação.** Operação cancelada.")
+        return ConversationHandler.END
+
+    # Executa a exclusão
+    sucesso = deletar_regulacao_por_id(chat_id, num_reg)
+
+    if sucesso:
+        await query.edit_message_text(f"✅ **Regulação {num_reg} excluída com sucesso!**", parse_mode="Markdown")
+    else:
+        await query.edit_message_text(f"❌ **Erro ao excluir a regulação {num_reg}.** Tente novamente.", parse_mode="Markdown")
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def cancelar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancela o fluxo de exclusão."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text("❌ **Operação cancelada.**", parse_mode="Markdown")
+    else:
+        await update.message.reply_text("❌ **Operação cancelada.**", parse_mode="Markdown")
+    
     context.user_data.clear()
     return ConversationHandler.END
 

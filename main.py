@@ -16,8 +16,8 @@ from handlers import (
     SELECIONAR_REGULACAO,
     SELECIONAR_CAMPO,
     AGUARDAR_NOVO_VALOR,
-    EXCLUIR_ID,
-    EXCLUIR_CONFIRM,
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -47,8 +47,9 @@ from handlers import (
     salvar_novo_valor,
     cancelar_corrigir,
     iniciar_excluir,
-    processar_excluir_id,
-    processar_excluir_confirmacao,
+    selecionar_regulacao_excluir_callback,
+    confirmar_exclusao_callback,
+    cancelar_excluir,
     cancelar_operacao,
     configurar_menu_comandos,
     executar_varredura_automatica
@@ -127,17 +128,24 @@ conv_corrigir = ConversationHandler(
     per_message=False
 )
 
-# 4. Excluir Regulação
+# 4. Excluir Regulação Interativa por Botões
 conv_excluir = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
         CommandHandler("excluir", iniciar_excluir)
     ],
     states={
-        EXCLUIR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_id)],
-        EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)]
+        SELECIONAR_REGULACAO_EXCLUIR: [
+            CallbackQueryHandler(selecionar_regulacao_excluir_callback)
+        ],
+        CONFIRMAR_EXCLUSAO: [
+            CallbackQueryHandler(confirmar_exclusao_callback)
+        ]
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    fallbacks=[
+        CommandHandler("cancelar", cancelar_excluir),
+        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_excluir)
+    ],
     allow_reentry=True,
     per_message=False
 )
