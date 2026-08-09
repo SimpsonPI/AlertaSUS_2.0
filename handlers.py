@@ -742,7 +742,7 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # ==========================================
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Lista as regulações salvas como botões clicáveis para exclusão."""
+    """Lista as regulações salvas para exclusão no mesmo padrão visual do Corrigir ID (LGPD)."""
     try:
         chat_id = update.effective_chat.id
         regulacoes = buscar_regulacoes_por_chat_id(chat_id)
@@ -758,10 +758,19 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         keyboard = []
         for reg in regulacoes:
-            # Chave ajustada para 'numero_reg' conforme a tabela do Supabase
             num_reg = reg.get("numero_reg", "N/A")
-            nome = reg.get("nome_paciente", "Sem nome")
-            texto_botao = f"🗑️ {num_reg} - {nome}"
+            nome_completo = reg.get("nome_paciente", "").strip()
+
+            # Lógica de formatação: PRIMEIRO NOME + Iniciais dos Sobrenomes (Ex: RIVKA S. P. O.)
+            partes = nome_completo.split()
+            if partes:
+                primeiro_nome = partes[0].upper()
+                iniciais_sobrenomes = [f"{p[0].upper()}." for p in partes[1:] if p]
+                nome_formatado = f"{primeiro_nome} {' '.join(iniciais_sobrenomes)}".strip()
+            else:
+                nome_formatado = "Paciente"
+
+            texto_botao = f"🗑️ Regulação {num_reg} - {nome_formatado}"
             keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
 
         keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excluir")])
