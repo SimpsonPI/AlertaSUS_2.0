@@ -98,21 +98,33 @@ conv_verificar_especifico = ConversationHandler(
         CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)]
     },
     fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
-    allow_reentry=True
+    allow_reentry=True,
+    per_message=False
 )
 
-# 3. Corrigir ID
+# 3. Corrigir Dados (Central Interativa por Botões)
 conv_corrigir = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
         CommandHandler("corrigir", iniciar_corrigir)
     ],
     states={
-        CORRIGIR_ANTIGO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_antigo)],
-        CORRIGIR_NOVO: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_corrigir_novo)]
+        SELECIONAR_REGULACAO: [
+            CallbackQueryHandler(selecionar_regulacao_callback)
+        ],
+        SELECIONAR_CAMPO: [
+            CallbackQueryHandler(selecionar_campo_callback)
+        ],
+        AGUARDAR_NOVO_VALOR: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_novo_valor)
+        ]
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
-    allow_reentry=True
+    fallbacks=[
+        CommandHandler("cancelar", cancelar_corrigir),
+        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_corrigir)
+    ],
+    allow_reentry=True,
+    per_message=False
 )
 
 # 4. Excluir Regulação
@@ -126,7 +138,8 @@ conv_excluir = ConversationHandler(
         EXCLUIR_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_excluir_confirmacao)]
     },
     fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
-    allow_reentry=True
+    allow_reentry=True,
+    per_message=False
 )
 
 # --------------------------------------------------
