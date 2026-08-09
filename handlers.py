@@ -59,12 +59,12 @@ def mascarar_nome(nome: str) -> str:
 (
     CONSULTAR_ID,
     # --- ESTADOS DA CENTRAL DE CORREÇÃO INTERATIVA ---
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
-    # --- ESTADOS DE EXCLUSÃO ---
-    EXCLUIR_ID,
-    EXCLUIR_CONFIRM,
+SELECIONAR_REGULACAO,
+SELECIONAR_CAMPO,
+AGUARDAR_NOVO_VALOR,
+# --- ESTADOS DE EXCLUSÃO INTERATIVA ---
+SELECIONAR_REGULACAO_EXCLUIR,
+CONFIRMAR_EXCLUSAO,
     # --- ESTADOS DO FORMULÁRIO INTERATIVO NO BOT ---
     ETAPA_SUS,
     ETAPA_NOME,
@@ -752,7 +752,6 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     for reg in regulacoes:
         num_reg = reg.get("numero_regulacao", "N/A")
         nome = reg.get("nome_paciente", "Sem nome")
-        # Texto do botão: "10829301 - RIVKA SIMPSON..."
         texto_botao = f"🗑️ {num_reg} - {nome}"
         keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
 
@@ -814,7 +813,6 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text("⚠️ **Erro ao identificar a regulação.** Operação cancelada.")
         return ConversationHandler.END
 
-    # Executa a exclusão
     sucesso = deletar_regulacao_por_id(chat_id, num_reg)
 
     if sucesso:
