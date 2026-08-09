@@ -745,8 +745,6 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Lista as regulações salvas como botões clicáveis para exclusão."""
     try:
         chat_id = update.effective_chat.id
-        print(f"DEBUG: Iniciando exclusão para o chat_id {chat_id}", flush=True)
-
         regulacoes = buscar_regulacoes_por_chat_id(chat_id)
 
         if not regulacoes:
@@ -760,7 +758,8 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         keyboard = []
         for reg in regulacoes:
-            num_reg = reg.get("numero_regulacao", "N/A")
+            # Chave ajustada para 'numero_reg' conforme a tabela do Supabase
+            num_reg = reg.get("numero_reg", "N/A")
             nome = reg.get("nome_paciente", "Sem nome")
             texto_botao = f"🗑️ {num_reg} - {nome}"
             keyboard.append([InlineKeyboardButton(texto_botao, callback_data=f"excluir_sel_{num_reg}")])
