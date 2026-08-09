@@ -246,14 +246,15 @@ async def _buscar_regulacoes_db(chat_id: int) -> list:
 # 4. COMANDOS BÁSICOS E NAVEGAÇÃO
 # ==========================================
 
-@rate_limit(max_mensagens=5, janela_segundos=60)
-# Constante formatada em HTML
+# 1. Definição da constante
 AVISO_PRIVADO_HTML = (
     "<blockquote>🔒 <b>AVISO IMPORTANTE</b>\n"
     "Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.\n"
     "<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"
 )
 
+# 2. Decorador colado diretamente na função
+@rate_limit(max_mensagens=5, janela_segundos=60)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     chat_id = update.effective_chat.id
