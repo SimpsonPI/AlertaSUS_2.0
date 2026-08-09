@@ -778,3 +778,11 @@ async def executar_varredura_automatica(app):
 
     except Exception as e:
         logging.error(f"Erro geral na varredura automática: {e}")
+
+
+# ==========================================
+# 8. FUNÇÕES LEGADAS (COMPATIBILIDADE)
+# ==========================================
+async def abrir_link_cadastro(update, context):
+    """Função legada para compatibilidade de importação com main.py."""
+    pass
