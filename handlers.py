@@ -269,11 +269,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 # Mantenha essa constante no topo do arquivo (ou logo acima da função)
-AVISO_PRIVADO_HTML = (
-    "<blockquote>🔒 <b>AVISO IMPORTANTE</b>\n"
-    "Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.\n"
-    "<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"
-)
+# Coloque a constante assim (usando três aspas):
+AVISO_PRIVADO_HTML = """<blockquote>🔒 <b>AVISO IMPORTANTE</b>
+Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.
+<b>Não possuímos nenhum vínculo, relação ou ligação oficial com a Fundação Municipal de Saúde (FMS)</b> ou órgãos governamentais.</blockquote>"""
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()
+    chat_id = update.effective_chat.id
+    mensagem = (
+        f"👋 Bem-vindo ao <b>AlertaSUS 2.0</b>!\n\n"
+        f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
+        f"{AVISO_PRIVADO_HTML}\n\n"
+        "Escolha uma opção no menu abaixo para começar:"
+    )
+    await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="HTML")
+    return ConversationHandler.END
+
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
