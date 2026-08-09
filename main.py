@@ -131,7 +131,7 @@ conv_corrigir = ConversationHandler(
 # 4. Excluir Regulação Interativa por Botões
 conv_excluir = ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("^❌ Excluir Regulação$"), iniciar_excluir),
+        MessageHandler(filters.Regex("(?i)Excluir"), iniciar_excluir),
         CommandHandler("excluir", iniciar_excluir)
     ],
     states={
@@ -144,7 +144,7 @@ conv_excluir = ConversationHandler(
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_excluir),
-        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_excluir)
+        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_excluir)
     ],
     allow_reentry=True,
     per_message=False
