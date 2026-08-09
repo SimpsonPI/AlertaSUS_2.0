@@ -18,6 +18,13 @@ from telegram import (
     InlineKeyboardMarkup
 )
 
+# 2. Importações do Banco de Dados (Adicione esta parte!)
+from database import (
+    buscar_regulacoes_por_chat_id,
+    deletar_regulacao_por_id,
+    # ... mantenha aqui as outras funções do banco que você já usa (ex: salvar_regulacao, etc)
+)
+
 # 2. Manipuladores de eventos e fluxos de conversa
 from telegram.ext import (
     ContextTypes,
