@@ -119,23 +119,43 @@ def _mascarar_sus(sus: str) -> str:
     return f"{sus[:4]}******{sus[-4:]}"
 
 
+def _obter_valor(fonte, *chaves):
+    """Extrai o primeiro valor válido (não None, não vazio e não 'None') de um dict ou objeto."""
+    if not fonte:
+        return None
+    for chave in chaves:
+        val = getattr(fonte, chave, None) if not isinstance(fonte, dict) else fonte.get(chave)
+        if val is not None and str(val).strip() not in ("", "None", "N/A"):
+            return str(val).strip()
+    return None
+
+
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
     """Formata os dados da regulação retornados do scraper/banco alinhados à LGPD."""
-    status = resultado.get("status", "N/A")
-    posicao = resultado.get("posicao", "N/A")
-    procedimento = resultado.get("procedimento", "N/A")
-    
-    # Busca nome do paciente e cartão SUS priorizando Banco / Scraper
-    paciente_raw = resultado.get("paciente")
-    sus_raw = resultado.get("cartao_sus")
+    resultado = resultado or {}
 
-    if reg_db:
-        if not paciente_raw or paciente_raw == "N/A":
-            paciente_raw = reg_db.get("nome_paciente", "N/A")
-        if not sus_raw or sus_raw == "N/A":
-            sus_raw = reg_db.get("cartao_sus") or reg_db.get("numero_sus", "N/A")
-        if (procedimento == "N/A" or not procedimento) and reg_db.get("procedimento"):
-            procedimento = reg_db.get("procedimento")
+    status = _obter_valor(resultado, "status") or "N/A"
+    posicao = _obter_valor(resultado, "posicao") or "N/A"
+    procedimento = _obter_valor(resultado, "procedimento") or _obter_valor(reg_db, "procedimento") or "N/A"
+
+    # Busca paciente e SUS priorizando Scraper -> Banco de Dados
+    paciente_raw = _obter_valor(resultado, "paciente", "nome_paciente") or _obter_valor(reg_db, "nome_paciente", "paciente", "nome") or "N/A"
+    sus_raw = _obter_valor(resultado, "cartao_sus", "numero_sus") or _obter_valor(reg_db, "cartao_sus", "numero_sus") or "N/A"
+
+    # Aplicação das máscaras LGPD
+    paciente_mascarado = _mascarar_nome(paciente_raw)
+    sus_mascarado = _mascarar_sus(sus_raw)
+
+    msg = (
+        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
+        f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
+        f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
+        f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
+        f"<b>Especialidade/Procedimento:</b> {escape(str(procedimento))}\n"
+        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
+        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
+    )
+    return msg
 
     # Aplicação das máscaras LGPD
     paciente_mascarado = _mascarar_nome(str(paciente_raw))
