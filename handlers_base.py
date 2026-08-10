@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from html import escape
 from telegram import Update, BotCommand
 from telegram.ext import ContextTypes, ConversationHandler
@@ -6,11 +7,13 @@ from rate_limiter import rate_limit
 from config import supabase
 from scraper import consultar_status_fms
 
-from handlers_utils import  (
+# Importação corrigida dos utilitários
+from handlers_utils import (
     AVISO_PRIVADO_HTML,
     TECLADO_MENU,
     _buscar_regulacoes_db
 )
+
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Intercepta mensagens para atalhos de menu durante conversas ativas."""
@@ -64,6 +67,7 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
+
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -76,6 +80,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     await update.message.reply_text(mensagem, reply_markup=TECLADO_MENU, parse_mode="HTML")
     return ConversationHandler.END
+
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -95,10 +100,12 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="HTML")
     return ConversationHandler.END
 
+
 async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     await update.message.reply_text("❌ Operação cancelada.", reply_markup=TECLADO_MENU)
     return ConversationHandler.END
+
 
 async def configurar_menu_comandos(application):
     comandos = [
@@ -112,17 +119,18 @@ async def configurar_menu_comandos(application):
     ]
     await application.bot.set_my_commands(comandos)
 
+
 async def executar_varredura_automatica(app):
     logging.info("⏰ Iniciando varredura automática de regulações...")
     try:
-        import asyncio
-        resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
-        )
+        def query_get():
+            return supabase.table("AlertaSUS_2.0").select("*").execute()
+
+        resp = await asyncio.to_thread(query_get)
         dados_regulacoes = getattr(resp, "data", []) or []
 
         for reg in dados_regulacoes:
-            chat_id = reg.get("chat_id")
+            chat_id = reg.get("chat_id") or reg.get("telegram_chat_id")
             numero_reg = str(reg.get("numero_reg", "")).strip()
             status_anterior = str(reg.get("status_anterior", "") or "").strip()
             nome_paciente = reg.get("nome_paciente", "Não informado")
@@ -136,11 +144,12 @@ async def executar_varredura_automatica(app):
                     status_atual = str(resultado.get("status_resumido", "")).strip()
 
                     if status_anterior and status_atual != status_anterior:
-                        await asyncio.to_thread(
-                            lambda: supabase.table("AlertaSUS_2.0").update({
+                        def query_update_change():
+                            return supabase.table("AlertaSUS_2.0").update({
                                 "status_anterior": status_atual
-                            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(numero_reg)).execute()
-                        )
+                            }).eq("numero_reg", str(numero_reg)).execute()
+
+                        await asyncio.to_thread(query_update_change)
 
                         msg_alerta = (
                             f"🚨 <b>ALERTA DE ATUALIZAÇÃO!</b>\n\n"
@@ -154,19 +163,21 @@ async def executar_varredura_automatica(app):
                             parse_mode="HTML"
                         )
                         logging.info(f"Alerta enviado para Chat ID {chat_id} (Reg: {numero_reg})")
-                    
+
                     elif not status_anterior:
-                        await asyncio.to_thread(
-                            lambda: supabase.table("AlertaSUS_2.0").update({
+                        def query_update_init():
+                            return supabase.table("AlertaSUS_2.0").update({
                                 "status_anterior": status_atual
-                            }).eq("chat_id", int(chat_id)).eq("numero_reg", str(numero_reg)).execute()
-                        )
+                            }).eq("numero_reg", str(numero_reg)).execute()
+
+                        await asyncio.to_thread(query_update_init)
 
             except Exception as err_item:
                 logging.error(f"Erro ao verificar regulação {numero_reg}: {err_item}")
 
     except Exception as e:
         logging.error(f"Erro geral na varredura automática: {e}")
+
 
 async def abrir_link_cadastro(update, context):
     """Função legada para compatibilidade de importação."""

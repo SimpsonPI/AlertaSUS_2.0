@@ -9,14 +9,20 @@ from rate_limiter import rate_limit
 from scraper import consultar_status_fms
 
 from handlers_utils import (
-    CONSULTAR_ID, TECLADO_MENU, TECLADO_CANCELAR,
-    mascarar_nome, _montar_msg_html,
-    _buscar_regulacao_por_id_reg, _buscar_regulacoes_db
+    CONSULTAR_ID,
+    TECLADO_MENU,
+    TECLADO_CANCELAR,
+    mascarar_nome,
+    _montar_msg_html,
+    _buscar_regulacao_por_id_reg,
+    _buscar_regulacoes_db
 )
 from handlers_base import verificar_se_e_menu_e_executar
 
+
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Consulta sequencialmente todas as regulações do usuário no sistema."""
     context.user_data.clear()
     chat_id = update.effective_chat.id
     msg_espera = await update.message.reply_text("🔍 <b>Consultando suas regulações no sistema...</b>", parse_mode="HTML")
@@ -30,7 +36,10 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
             )
             return ConversationHandler.END
 
-        await msg_espera.delete()
+        try:
+            await msg_espera.delete()
+        except Exception:
+            pass
 
         for reg in regulacoes:
             numero_reg = str(reg.get("numero_reg", "")).strip()
@@ -51,13 +60,14 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
             except Exception as item_err:
                 logging.error(f"Erro ao processar regulação {numero_reg}: {item_err}")
 
-            await asyncio.sleep(4)
+            await asyncio.sleep(2)
 
     except Exception as e:
         logging.error(f"Erro ao consultar regulações: {traceback.format_exc()}")
-        await msg_espera.edit_text("❌ Ocorreu um erro ao acessar o banco de dados. Tente novamente em instantes.")
+        await update.message.reply_text("❌ Ocorreu um erro ao acessar o banco de dados. Tente novamente em instantes.")
 
     return ConversationHandler.END
+
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -94,6 +104,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
         await update.message.reply_text(texto, reply_markup=reply_markup, parse_mode="HTML")
 
     return CONSULTAR_ID
+
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa o ID escolhido via botão Inline ou digitado manualmente."""
@@ -148,7 +159,11 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             await query.edit_message_text(f"❌ {escape(msg_erro)}", parse_mode="HTML")
         await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
     else:
-        await msg_espera.delete()
+        try:
+            await msg_espera.delete()
+        except Exception:
+            pass
+
         if resultado.get("sucesso"):
             msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
             await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)

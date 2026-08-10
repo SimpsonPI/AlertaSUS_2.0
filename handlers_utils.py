@@ -34,7 +34,7 @@ AVISO_PRIVADO_HTML = (
     ETAPA_REGULACAO,
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
-    ETAPA_LGPD
+    ETAPA_LGPD,
 ) = range(14)
 
 # ==============================================================================
@@ -71,11 +71,11 @@ TECLADO_CONFIRMACAO = ReplyKeyboardMarkup(
 # ==============================================================================
 def limpar_telefone(texto: str) -> str:
     """Remove tudo que não for dígito e garante apenas os números do telefone."""
-    return re.sub(r"\D", "", texto)
+    return re.sub(r"\D", "", texto or "")
 
 def formatar_data_nascimento(texto: str) -> str | None:
-    """Formata/valida automaticamente para DD/MM/AAAA."""
-    numeros = re.sub(r"\D", "", texto)
+    """Formata e valida a data no padrão DD/MM/AAAA."""
+    numeros = re.sub(r"\D", "", texto or "")
     if len(numeros) == 8:
         dia, mes, ano = numeros[:2], numeros[2:4], numeros[4:]
         if 1 <= int(dia) <= 31 and 1 <= int(mes) <= 12 and 1900 <= int(ano) <= 2100:
@@ -84,27 +84,31 @@ def formatar_data_nascimento(texto: str) -> str | None:
 
 def para_maiusculo(texto: str) -> str:
     """Converte o texto digitado para MAIÚSCULAS e remove espaços extras."""
-    return texto.strip().upper()
+    return (texto or "").strip().upper()
 
 def mascarar_sus(numero_sus: str) -> str:
-    """Mascara o número do Cartão SUS para logs/exibição."""
-    if not numero_sus or len(str(numero_sus)) < 5:
+    """Mascara o número do Cartão SUS mantendo os 3 primeiros e os 2 últimos dígitos."""
+    if not numero_sus:
         return "***"
     num_str = str(numero_sus).strip()
+    if len(num_str) < 5:
+        return "***"
     return f"{num_str[:3]}{'*' * (len(num_str) - 5)}{num_str[-2:]}"
 
 def mascarar_nome(nome: str) -> str:
-    """Anonimiza o nome do paciente preservando apenas iniciais."""
+    """Anonimiza o nome do paciente preservando apenas as iniciais após o primeiro nome."""
     if not nome:
         return "***"
     partes = str(nome).strip().split()
-    if len(partes) <= 1:
+    if not partes:
+        return "***"
+    if len(partes) == 1:
         return partes[0]
-    iniciais = [partes[0]] + [f"{p[0]}." for p in partes[1:]]
+    iniciais = [partes[0]] + [f"{p[0]}." for p in partes[1:] if p]
     return " ".join(iniciais)
 
 def _formatar_status_detalhado(status_raw: str) -> str:
-    """Formata o texto retornado pelo scraper ou banco de dados."""
+    """Formata o texto de status do agendamento vindo do scraper ou BD para HTML."""
     if not status_raw:
         return "Em processamento"
 
@@ -138,7 +142,7 @@ def _formatar_status_detalhado(status_raw: str) -> str:
                     linhas_formatadas.append(f"📍 <b>Endereço:</b> {escape(valor)}")
                 elif "telefone" in chave_lower or "contato" in chave_lower:
                     linhas_formatadas.append(f"📞 <b>Telefone:</b> {escape(valor)}")
-                elif "alerta" in chave_lower or "observação" in chave_lower:
+                elif "alerta" in chave_lower or "observação" in chave_lower or "observacao" in chave_lower:
                     alerta_texto = valor
                 else:
                     linhas_formatadas.append(f"• <b>{escape(chave)}:</b> {escape(valor)}")
@@ -153,22 +157,28 @@ def _formatar_status_detalhado(status_raw: str) -> str:
     return escape(texto)
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Monta a mensagem em HTML formatada."""
-    dados = resultado.get("dados", {})
-    
-    paciente_bruto = (reg_db.get("nome_paciente") if reg_db else None) or dados.get("paciente")
+    """Monta a mensagem de resposta formatada em HTML para o usuário."""
+    dados = resultado.get("dados", {}) if isinstance(resultado, dict) else {}
+    reg_db = reg_db or {}
+
+    paciente_bruto = reg_db.get("nome_paciente") or dados.get("paciente")
     if not paciente_bruto or str(paciente_bruto).strip().lower() in ["none", "null", ""]:
         paciente_exibicao = "Não informado"
     else:
         paciente_exibicao = mascarar_nome(str(paciente_bruto))
 
-    sus_bruto = reg_db.get("numero_sus") if reg_db else None
+    sus_bruto = reg_db.get("numero_sus")
     sus_exibicao = mascarar_sus(sus_bruto) if sus_bruto else "Não informado"
-        
-    cbo = (reg_db.get("cbo") if reg_db else None) or "Não informado"
-    procedimento = (reg_db.get("procedimento") if reg_db else None) or dados.get("procedimento") or "Não informado"
-    
-    status_bruto = resultado.get("status_resumido") or resultado.get("status") or "Em processamento"
+
+    cbo = reg_db.get("cbo") or "Não informado"
+    procedimento = reg_db.get("procedimento") or dados.get("procedimento") or "Não informado"
+
+    status_bruto = (
+        resultado.get("status_resumido")
+        or resultado.get("status")
+        or "Em processamento"
+    ) if isinstance(resultado, dict) else "Em processamento"
+
     status_exibicao = _formatar_status_detalhado(status_bruto)
 
     return (
@@ -181,11 +191,16 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         f"{status_exibicao}"
     )
 
+# ==============================================================================
+# CONSULTAS AO SUPABASE (SÍNCRONAS EXECUTADAS EM THREADS)
+# ==============================================================================
 async def _buscar_paciente_por_sus(numero_sus: str) -> dict:
+    """Busca o primeiro paciente associado ao número do SUS no banco."""
     try:
-        resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("numero_sus", str(numero_sus)).execute()
-        )
+        def query():
+            return supabase.table("AlertaSUS_2.0").select("*").eq("numero_sus", str(numero_sus)).execute()
+        
+        resp = await asyncio.to_thread(query)
         if resp and getattr(resp, "data", None) and len(resp.data) > 0:
             return resp.data[0]
     except Exception as e:
@@ -193,10 +208,12 @@ async def _buscar_paciente_por_sus(numero_sus: str) -> dict:
     return {}
 
 async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
+    """Busca o registro correspondente ao número de regulação."""
     try:
-        resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", str(numero_reg)).execute()
-        )
+        def query():
+            return supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", str(numero_reg)).execute()
+
+        resp = await asyncio.to_thread(query)
         if resp and getattr(resp, "data", None) and len(resp.data) > 0:
             return resp.data[0]
     except Exception as e:
@@ -204,18 +221,15 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
     return {}
 
 async def _buscar_regulacoes_db(chat_id: int) -> list:
+    """Busca todas as regulações associadas ao Telegram chat_id do usuário."""
     str_chat_id = str(chat_id).strip()
     try:
-        resp = await asyncio.to_thread(
-            lambda: supabase.table("AlertaSUS_2.0").select("*").execute()
-        )
+        def query():
+            return supabase.table("AlertaSUS_2.0").select("*").eq("telegram_chat_id", str_chat_id).execute()
+
+        resp = await asyncio.to_thread(query)
         if resp and getattr(resp, "data", None):
-            regulacoes_usuario = []
-            for row in resp.data:
-                valores_linha = [str(val).strip() for val in row.values()]
-                if str_chat_id in valores_linha:
-                    regulacoes_usuario.append(row)
-            return regulacoes_usuario
+            return resp.data
     except Exception as e:
-        logging.error(f"Erro ao consultar Supabase: {e}")
+        logging.error(f"Erro ao consultar Supabase para chat_id {chat_id}: {e}")
     return []
