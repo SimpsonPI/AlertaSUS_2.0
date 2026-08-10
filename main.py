@@ -12,20 +12,16 @@ from telegram.ext import (
 from config import TELEGRAM_BOT_TOKEN
 
 # --------------------------------------------------
-# IMPORTAÇÕES MODULARIZADAS
+# IMPORTAÇÃO DO HANDLER UNIFICADO
 # --------------------------------------------------
-
-# Handlers Base
-from handlers_base import (
-    start,
-    comando_ajuda,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    executar_varredura_automatica
-)
-
-# Handlers de Cadastro
-from handlers_cadastro import (
+from handler import (
+    # Constantes de Estado
+    CONSULTAR_ID,
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -34,6 +30,14 @@ from handlers_cadastro import (
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD,
+    
+    # Comandos e Handlers Base
+    start,
+    comando_ajuda,
+    cancelar_operacao,
+    configurar_menu_comandos,
+    
+    # Fluxo de Cadastro
     iniciar_cadastro_manual,
     receber_sus,
     receber_nome,
@@ -42,35 +46,21 @@ from handlers_cadastro import (
     receber_regulacao,
     receber_cbo,
     receber_procedimento,
-    finalizar_cadastro
-)
-
-# Handlers de Consulta
-from handlers_consulta import (
+    finalizar_cadastro,
+    
+    # Fluxo de Consulta
     comando_verificar_todas,
     iniciar_verificar_especifico,
-    processar_verificar_especifico
-)
-
-# Utilitários e Estados
-from handlers_utils import CONSULTAR_ID
-
-# Handlers de Correção
-from handlers_correcao import (
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
+    processar_verificar_especifico,
+    
+    # Fluxo de Correção
     iniciar_corrigir,
     selecionar_regulacao_callback,
     selecionar_campo_callback,
     salvar_novo_valor,
-    cancelar_corrigir
-)
-
-# Handlers de Exclusão
-from handlers_exclusao import (
-    SELECIONAR_REGULACAO_EXCLUIR,
-    CONFIRMAR_EXCLUSAO,
+    cancelar_corrigir,
+    
+    # Fluxo de Exclusão
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
     confirmar_exclusao_callback,
