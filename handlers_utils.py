@@ -221,26 +221,35 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
     return {}
 
 async def _buscar_regulacoes_db(chat_id: int) -> list:
-    """Busca todas as regulações associadas ao Telegram chat_id do usuário."""
+    """Busca regulações com logs de diagnóstico no console."""
     str_chat_id = str(chat_id).strip()
     int_chat_id = int(chat_id)
-    
-    try:
-        def query():
-            # Tenta buscar tanto como Int quanto como String para evitar incompatibilidade
-            return (
-                supabase.table("AlertaSUS_2.0")
-                .select("*")
-                .or_(f"telegram_chat_id.eq.{int_chat_id},telegram_chat_id.eq.{str_chat_id}")
-                .execute()
-            )
 
-        resp = await asyncio.to_thread(query)
+    print("\n" + "="*50)
+    print(f"🔍 [DIAGNÓSTICO] Chat ID recebido do Telegram: {chat_id} (Tipo: {type(chat_id)})")
+
+    try:
+        def query_debug():
+            # 1. Pega 1 registro qualquer da tabela para vermos as colunas reais
+            amostra = supabase.table("AlertaSUS_2.0").select("*").limit(1).execute()
+            if amostra.data:
+                print(f"📋 [DIAGNÓSTICO] Nomes das Colunas no Supabase: {list(amostra.data[0].keys())}")
+            else:
+                print("⚠️ [DIAGNÓSTICO] A tabela 'AlertaSUS_2.0' parece estar totalmente vazia!")
+
+            # 2. Tenta buscar pelo chat_id
+            res = supabase.table("AlertaSUS_2.0").select("*").or_(f"telegram_chat_id.eq.{int_chat_id},telegram_chat_id.eq.{str_chat_id}").execute()
+            return res
+
+        resp = await asyncio.to_thread(query_debug)
+        print(f"📊 [DIAGNÓSTICO] Registros encontrados: {len(resp.data if resp.data else [])}")
+        print("="*50 + "\n", flush=True)
+
         if resp and getattr(resp, "data", None):
-            logging.info(f"✅ Encontradas {len(resp.data)} regulações para o chat_id {chat_id}")
             return resp.data
-        else:
-            logging.warning(f"⚠️ Nenhuma regulação encontrada no Supabase para o chat_id: {chat_id}")
+
     except Exception as e:
+        print(f"❌ [DIAGNÓSTICO] Erro na Query: {e}", flush=True)
         logging.error(f"Erro ao consultar Supabase para chat_id {chat_id}: {e}")
+
     return []
