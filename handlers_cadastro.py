@@ -8,14 +8,14 @@ from rate_limiter import rate_limit
 from config import supabase
 from scraper import consultar_status_fms
 
-from handlers.utils import (
+from handlers_utils import (
     ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
     ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD,
     TECLADO_MENU, TECLADO_CANCELAR,
     limpar_telefone, formatar_data_nascimento, para_maiusculo,
     _buscar_paciente_por_sus
 )
-from handlers.base import verificar_se_e_menu_e_executar
+from handlers)base import verificar_se_e_menu_e_executar
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

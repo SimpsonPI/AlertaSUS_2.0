@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import buscar_regulacoes_por_chat_id, deletar_regulacao_por_id
 
-from handlers.utils import (
+from handlers_utils import (
     SELECIONAR_REGULACAO_EXCLUIR, CONFIRMAR_EXCLUSAO
 )
 

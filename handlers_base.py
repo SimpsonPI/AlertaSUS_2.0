@@ -6,7 +6,7 @@ from rate_limiter import rate_limit
 from config import supabase
 from scraper import consultar_status_fms
 
-from handlers.utils import (
+from handlers_utils import  (
     AVISO_PRIVADO_HTML,
     TECLADO_MENU,
     _buscar_regulacoes_db
@@ -14,10 +14,10 @@ from handlers.utils import (
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Intercepta mensagens para atalhos de menu durante conversas ativas."""
-    from handlers.cadastro import iniciar_cadastro_manual
-    from handlers.consulta import comando_verificar_todas, iniciar_verificar_especifico
-    from handlers.correcao import iniciar_corrigir
-    from handlers.exclusao import iniciar_excluir
+    from handlers_cadastro import iniciar_cadastro_manual
+    from handlers_consulta import comando_verificar_todas, iniciar_verificar_especifico
+    from handlers_correcao import iniciar_corrigir
+    from handlers_exclusao import iniciar_excluir
 
     if not update.message or not update.message.text:
         return False

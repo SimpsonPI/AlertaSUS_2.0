@@ -7,12 +7,12 @@ from rate_limiter import rate_limit
 from config import supabase
 from scraper import consultar_status_fms
 
-from handlers.utils import (
+from handlers_utils import (
     SELECIONAR_REGULACAO, SELECIONAR_CAMPO, AGUARDAR_NOVO_VALOR,
     TECLADO_MENU, mascarar_nome, mascarar_sus, para_maiusculo,
     _buscar_regulacoes_db
 )
-from handlers.base import verificar_se_e_menu_e_executar
+from handlers_base import verificar_se_e_menu_e_executar
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

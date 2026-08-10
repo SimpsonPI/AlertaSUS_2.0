@@ -1,4 +1,4 @@
-from handlers.utils import (
+from handlers_utils import (
     CONSULTAR_ID,
     SELECIONAR_REGULACAO,
     SELECIONAR_CAMPO,
@@ -19,7 +19,7 @@ from handlers.utils import (
     AVISO_PRIVADO_HTML
 )
 
-from handlers.base import (
+from handlers_base import (
     start,
     comando_ajuda,
     cancelar_operacao,
@@ -29,7 +29,7 @@ from handlers.base import (
     abrir_link_cadastro
 )
 
-from handlers.cadastro import (
+from handlers_cadastro import (
     iniciar_cadastro_manual,
     receber_sus,
     receber_nome,
@@ -41,13 +41,13 @@ from handlers.cadastro import (
     finalizar_cadastro
 )
 
-from handlers.consulta import (
+from handlers_consulta import (
     comando_verificar_todas,
     iniciar_verificar_especifico,
     processar_verificar_especifico
 )
 
-from handlers.correcao import (
+from handlers_correcao import (
     iniciar_corrigir,
     selecionar_regulacao_callback,
     selecionar_campo_callback,
@@ -55,7 +55,7 @@ from handlers.correcao import (
     cancelar_corrigir
 )
 
-from handlers.exclusao import (
+from handlers_exclusao import (
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
     confirmar_exclusao_callback,

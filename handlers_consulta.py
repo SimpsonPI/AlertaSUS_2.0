@@ -8,12 +8,12 @@ from telegram.ext import ContextTypes, ConversationHandler
 from rate_limiter import rate_limit
 from scraper import consultar_status_fms
 
-from handlers.utils import (
+from handlers_utils import (
     CONSULTAR_ID, TECLADO_MENU, TECLADO_CANCELAR,
     mascarar_nome, _montar_msg_html,
     _buscar_regulacao_por_id_reg, _buscar_regulacoes_db
 )
-from handlers.base import verificar_se_e_menu_e_executar
+from handlers_base import verificar_se_e_menu_e_executar
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
