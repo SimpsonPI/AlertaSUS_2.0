@@ -230,7 +230,7 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verifica todas as regulações cadastradas pelo usuário."""
     user_id = update.effective_user.id
-    regulacoes = await buscar_regulacoes_por_usuario(user_id)
+    regulacoes = buscar_regulacoes_por_usuario(user_id)
 
     if not regulacoes:
         await update.message.reply_text(
@@ -266,7 +266,7 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia a consulta de uma regulação específica apresentando botões inline."""
     user_id = update.effective_user.id
-    regulacoes = await buscar_regulacoes_por_usuario(user_id)
+    regulacoes = buscar_regulacoes_por_usuario(user_id)
 
     if not regulacoes:
         await update.message.reply_text(
@@ -504,7 +504,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    regulacoes = await buscar_regulacoes_por_usuario(user_id)
+    regulacoes = buscar_regulacoes_por_usuario(user_id)
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui regulações cadastradas para corrigir.", reply_markup=TECLADO_MENU)
