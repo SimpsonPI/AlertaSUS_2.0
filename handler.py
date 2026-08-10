@@ -103,12 +103,12 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # --------------------------------------------------
 
 def _extrair_id_e_nome(reg: dict):
-    """Extrai o número identificador e o nome do paciente de forma resiliente às colunas do Supabase."""
+    """Extrai o número identificador da regulação e o nome do paciente."""
     num_id = (
         reg.get("numero_regulacao") or 
-        reg.get("id") or 
-        reg.get("id_regulacao") or 
         reg.get("numero_solicitacao") or 
+        reg.get("id_regulacao") or 
+        reg.get("id") or 
         "S/N"
     )
     nome = (
