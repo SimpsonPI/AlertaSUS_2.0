@@ -102,6 +102,23 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # FUNÇÕES AUXILIARES E FORMATADORES
 # --------------------------------------------------
 
+def _extrair_id_e_nome(reg: dict):
+    """Extrai o número identificador e o nome do paciente de forma resiliente às colunas do Supabase."""
+    num_id = (
+        reg.get("numero_regulacao") or 
+        reg.get("id") or 
+        reg.get("id_regulacao") or 
+        reg.get("numero_solicitacao") or 
+        "S/N"
+    )
+    nome = (
+        reg.get("nome_paciente") or 
+        reg.get("paciente") or 
+        reg.get("nome") or 
+        "Paciente não informado"
+    )
+    return str(num_id), str(nome)
+
 async def configurar_menu_comandos(app):
     """Configura o menu de comandos do Telegram (botão azul)."""
     comandos = [
@@ -247,7 +264,7 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
     )
 
     for reg in regulacoes:
-        num_reg = reg.get("numero_regulacao")
+        num_reg, _ = _extrair_id_e_nome(reg)
         resultado = await consultar_status_fms(num_reg)
         
         if resultado.get("sucesso"):
@@ -279,8 +296,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 
     teclado_inline = []
     for r in regulacoes:
-        num = r.get("numero_regulacao")
-        nome = r.get("nome_paciente", "Sem Nome")
+        num, nome = _extrair_id_e_nome(r)
         teclado_inline.append([InlineKeyboardButton(f"📄 ID: {num} - {nome}", callback_data=f"ver_esp_{num}")])
 
     teclado_inline.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
@@ -512,7 +528,9 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     teclado = []
     for r in regulacoes:
-        teclado.append([InlineKeyboardButton(f"📄 Reg: {r['numero_regulacao']} - {r['nome_paciente']}", callback_data=f"corr_reg_{r['id']}")])
+        num, nome = _extrair_id_e_nome(r)
+        db_id = r.get("id") or r.get("id_regulacao") or num
+        teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{db_id}")])
     teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
     await update.message.reply_text("✏️ <b>Selecione qual regulação deseja corrigir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
@@ -527,7 +545,7 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
         return ConversationHandler.END
 
-    reg_id = int(query.data.replace("corr_reg_", ""))
+    reg_id = query.data.replace("corr_reg_", "")
     context.user_data["corr_reg_id"] = reg_id
 
     teclado = InlineKeyboardMarkup([
@@ -582,7 +600,7 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    regulacoes = await buscar_regulacoes_por_usuario(user_id)
+    regulacoes = buscar_regulacoes_por_usuario(user_id)
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui nenhuma regulação cadastrada para excluir.", reply_markup=TECLADO_MENU)
@@ -590,7 +608,9 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     teclado = []
     for r in regulacoes:
-        teclado.append([InlineKeyboardButton(f"🗑️ Reg: {r['numero_regulacao']} - {r['nome_paciente']}", callback_data=f"excl_reg_{r['id']}")])
+        num, nome = _extrair_id_e_nome(r)
+        db_id = r.get("id") or r.get("id_regulacao") or num
+        teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{db_id}")])
     teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
 
     await update.message.reply_text("🗑️ <b>Selecione qual regulação deseja excluir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
@@ -605,7 +625,7 @@ async def selecionar_regulacao_excluir_callback(update: Update, context: Context
         await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
         return ConversationHandler.END
 
-    reg_id = int(query.data.replace("excl_reg_", ""))
+    reg_id = query.data.replace("excl_reg_", "")
     context.user_data["excl_reg_id"] = reg_id
 
     teclado = InlineKeyboardMarkup([
@@ -648,7 +668,7 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
     regulacoes = await buscar_todas_regulacoes_ativas()
 
     for reg in regulacoes:
-        num_reg = reg.get("numero_regulacao")
+        num_reg, _ = _extrair_id_e_nome(reg)
         telegram_id = reg.get("telegram_id")
         status_antigo = reg.get("status_atual")
 
@@ -657,7 +677,9 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
         if resultado.get("sucesso"):
             novo_status = resultado.get("status")
             if novo_status and novo_status != status_antigo:
-                await atualizar_campo_regulacao(reg["id"], "status_atual", novo_status)
+                reg_db_id = reg.get("id") or reg.get("id_regulacao")
+                if reg_db_id:
+                    await atualizar_campo_regulacao(reg_db_id, "status_atual", novo_status)
                 
                 msg_notificacao = (
                     f"🔔 <b>MUDANÇA DE STATUS DETECTADA!</b>\n\n"
