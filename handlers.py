@@ -696,17 +696,14 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     # 1. Trata se a entrada veio de um BOTÃO INLINE
     if query:
         await query.answer()
-        
+
         if query.data == "cancelar_ver_esp":
             await query.edit_message_text("❌ Operação de consulta cancelada.")
             await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
             context.user_data.clear()
             return ConversationHandler.END
 
-        # Extrai o número da regulação do callback_data
         numero_reg = query.data.replace("ver_esp_", "")
-        
-        # Edita a mensagem do botão avisando que a consulta iniciou
         await query.edit_message_text(
             f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", 
             parse_mode="HTML"
@@ -716,12 +713,45 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
-            
-        numero_reg = update.message.text.strip()
-        await update.message.reply_text(
-            f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", 
+
+        texto = update.message.text.strip()
+        numero_reg = re.sub(r"\D", "", texto)
+
+        if not numero_reg:
+            await update.message.reply_text(
+                "⚠️ Por favor, digite apenas os números do ID da regulação:", 
+                reply_markup=TECLADO_CANCELAR
+            )
+            return CONSULTAR_ID
+
+        msg_espera = await update.message.reply_text(
+            f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code>...", 
             parse_mode="HTML"
         )
+
+    # 3. Lógica de consulta (banco de dados e FMS)
+    reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
+    resultado = await consultar_status_fms(numero_reg)
+
+    if query:
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await query.edit_message_text(msg_html, parse_mode="HTML")
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await query.edit_message_text(f"❌ {escape(msg_erro)}", parse_mode="HTML")
+        await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+    else:
+        await msg_espera.delete()
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await update.message.reply_text(f"❌ {escape(msg_erro)}", parse_mode="HTML", reply_markup=TECLADO_MENU)
+
+    context.user_data.clear()
+    return ConversationHandler.END
 
     # ------------------------------------------------------------------
     # 3. LÓGICA DE CONSULTA UNIFICADA (Executa para ambos os casos)
