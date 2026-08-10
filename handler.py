@@ -103,18 +103,13 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # --------------------------------------------------
 
 def _extrair_id_e_nome(reg: dict):
-    """Extrai o número da regulação (SUS) e o nome do paciente, ignorando o ID interno do banco."""
-    # Busca estritamente pelas colunas que armazenam o número da regulação/solicitação
+    """Extrai o número da regulação (SUS) e o nome do paciente."""
     num_id = (
         reg.get("numero_regulacao") or 
         reg.get("numero_solicitacao") or 
-        reg.get("id_regulacao")
+        reg.get("id_regulacao") or
+        "S/N"
     )
-    
-    # Se por algum motivo o campo estiver vazio ou None, exibe 'S/N'
-    if not num_id:
-        num_id = "numero_reg"
-
     nome = (
         reg.get("nome_paciente") or 
         reg.get("paciente") or 
@@ -301,19 +296,20 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
     teclado_inline = []
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
-        teclado_inline.append([InlineKeyboardButton(f"📄 ID: {num} - {nome}", callback_data=f"ver_esp_{num}")])
+        # Trocado 'ID:' por 'Regulação:' no botão
+        teclado_inline.append([InlineKeyboardButton(f"📄 Regulação: {num} - {nome}", callback_data=f"ver_esp_{num}")])
 
     teclado_inline.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
 
     await update.message.reply_text(
-        "🔎 <b>Selecione uma regulação abaixo ou digite o número do ID desejado:</b>",
+        "🔎 <b>Selecione uma regulação abaixo ou digite o número da regulação desejada:</b>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(teclado_inline)
     )
     return CONSULTAR_ID
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Processa o ID escolhido via botão Inline ou digitado manualmente."""
+    """Processa o número da regulação escolhido via botão Inline ou digitado manualmente."""
     query = update.callback_query
 
     # 1. Entrada via Botão Inline
@@ -328,7 +324,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
         numero_reg = query.data.replace("ver_esp_", "")
         await query.edit_message_text(
-            f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", 
+            f"🔎 Consultando Regulação <code>{escape(numero_reg)}</code> na FMS...", 
             parse_mode="HTML"
         )
 
@@ -342,15 +338,39 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
         if not numero_reg:
             await update.message.reply_text(
-                "⚠️ Por favor, digite apenas os números do ID da regulação:", 
+                "⚠️ Por favor, digite apenas os números da regulação:", 
                 reply_markup=TECLADO_CANCELAR
             )
             return CONSULTAR_ID
 
         msg_espera = await update.message.reply_text(
-            f"🔎 Pesquisando ID <code>{escape(numero_reg)}</code>...", 
+            f"🔎 Pesquisando Regulação <code>{escape(numero_reg)}</code>...", 
             parse_mode="HTML"
         )
+
+    # 3. Lógica de consulta (banco de dados e FMS)
+    reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
+    resultado = await consultar_status_fms(numero_reg)
+
+    if query:
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await query.edit_message_text(msg_html, parse_mode="HTML")
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await query.edit_message_text(f"❌ {escape(msg_erro)}", parse_mode="HTML")
+        await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+    else:
+        await msg_espera.delete()
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await update.message.reply_text(f"❌ {escape(msg_erro)}", parse_mode="HTML", reply_markup=TECLADO_MENU)
+
+    context.user_data.clear()
+    return ConversationHandler.END
 
     # 3. Lógica de consulta (banco de dados e FMS)
     reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
