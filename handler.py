@@ -103,102 +103,25 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # --------------------------------------------------
 
 def _extrair_id_e_nome(reg: dict):
-    """Extrai o número da regulação (SUS) e o nome do paciente."""
+    """Extrai o número da regulação (numero_reg) e o nome do paciente."""
+    # Busca direta priorizando 'numero_reg' e 'num_reg'
     num_id = (
+        reg.get("numero_reg") or 
+        reg.get("num_reg") or 
         reg.get("numero_regulacao") or 
         reg.get("numero_solicitacao") or 
-        reg.get("id_regulacao") or
-        "S/N"
+        reg.get("id_regulacao") or 
+        reg.get("id")
     )
+    
     nome = (
         reg.get("nome_paciente") or 
         reg.get("paciente") or 
         reg.get("nome") or 
         "Paciente não informado"
     )
-    return str(num_id), str(nome)   
-
-async def configurar_menu_comandos(app):
-    """Configura o menu de comandos do Telegram (botão azul)."""
-    comandos = [
-        BotCommand("start", "Inicia o bot e exibe o menu principal"),
-        BotCommand("verificar", "Verifica o status de todas as suas regulações"),
-        BotCommand("consultar", "Consulta o status de uma regulação específica"),
-        BotCommand("cadastrar", "Cadastra uma nova regulação"),
-        BotCommand("corrigir", "Corrigi dados de uma regulação cadastrada"),
-        BotCommand("excluir", "Exclui uma regulação cadastrada"),
-        BotCommand("ajuda", "Exibe as instruções de uso do sistema")
-    ]
-    await app.bot.set_my_commands(comandos)
-
-async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Verifica se o usuário clicou em uma opção do menu principal durante um fluxo de conversa."""
-    if not update.message or not update.message.text:
-        return False
-
-    texto = update.message.text.strip()
     
-    opcoes_menu = [
-        "📋 Verificar Todas", "🔍 Verificar Específico",
-        "➕ Cadastrar Nova", "✏️ Corrigir ID",
-        "🗑️ Excluir Regulação", "ℹ️ Ajuda",
-        "/start", "/verificar", "/consultar", "/cadastrar", "/corrigir", "/excluir", "/ajuda"
-    ]
-
-    if texto in opcoes_menu:
-        await update.message.reply_text("🔄 Cancelando operação anterior e retratando comando...")
-        context.user_data.clear()
-        
-        if texto in ["📋 Verificar Todas", "/verificar"]:
-            await comando_verificar_todas(update, context)
-        elif texto in ["🔍 Verificar Específico", "/consultar"]:
-            await iniciar_verificar_especifico(update, context)
-        elif texto in ["➕ Cadastrar Nova", "/cadastrar"]:
-            await iniciar_cadastro_manual(update, context)
-        elif texto in ["✏️ Corrigir ID", "/corrigir"]:
-            await iniciar_corrigir(update, context)
-        elif texto in ["🗑️ Excluir Regulação", "/excluir"]:
-            await iniciar_excluir(update, context)
-        elif texto in ["ℹ️ Ajuda", "/ajuda"]:
-            await comando_ajuda(update, context)
-        elif texto == "/start":
-            await start(update, context)
-            
-        return True
-    return False
-
-def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Formata os dados da regulação retornados do scraper/banco em HTML para o Telegram."""
-    status = resultado.get("status", "N/A")
-    posicao = resultado.get("posicao", "N/A")
-    paciente = resultado.get("paciente", "N/A")
-    procedimento = resultado.get("procedimento", "N/A")
-    data_solic = resultado.get("data_solicitacao", "N/A")
-
-    if reg_db:
-        if paciente == "N/A" and reg_db.get("nome_paciente"):
-            paciente = reg_db.get("nome_paciente")
-        if procedimento == "N/A" and reg_db.get("procedimento"):
-            procedimento = reg_db.get("procedimento")
-
-    msg = (
-        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
-        f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
-        f"<b>Paciente:</b> {escape(str(paciente))}\n"
-        f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
-        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
-        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
-        f"<b>Data Solicitação:</b> {escape(str(data_solic))}\n"
-    )
-    return msg
-
-async def _buscar_regulacao_por_id_reg(numero_reg: str):
-    """Busca os dados locais no banco de dados com base no número da regulação."""
-    try:
-        return await obter_regulacao_por_numero(numero_reg)
-    except Exception as e:
-        logger.error(f"Erro ao buscar regulação no banco: {e}")
-        return None
+    return str(num_id), str(nome)
 
 # --------------------------------------------------
 # HANDLERS BASE E COMANDOS DIRECTOS
