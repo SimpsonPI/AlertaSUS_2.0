@@ -191,8 +191,59 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
+def _formatar_status_detalhado(status_raw: str) -> str:
+    """
+    Identifica se o status possui separadores '|' (dados completos de agendamento FMS)
+    e transforma o texto em um layout estruturado e fácil de ler no Telegram.
+    """
+    if not status_raw or "|" not in status_raw:
+        return escape(str(status_raw))
+
+    partes = [p.strip() for p in status_raw.split("|") if p.strip()]
+    
+    status_formatado = []
+    alerta_texto = ""
+
+    for item in partes:
+        if ":" in item:
+            chave, valor = item.split(":", 1)
+            chave = chave.strip()
+            valor = valor.strip()
+
+            # Mapeamento para ícones e formatação amigável
+            if chave.lower() == "situação":
+                status_formatado.append(f"📌 <b>Situação:</b> {escape(valor)}")
+            elif chave.lower() == "data e hora da consulta marcada":
+                status_formatado.append(f"📅 <b>Data/Hora:</b> {escape(valor)}")
+            elif chave.lower() == "autorização do agendamento":
+                status_formatado.append(f"🔑 <b>Autorização:</b> <code>{escape(valor)}</code>")
+            elif chave.lower() == "estabelecimento executante da consulta":
+                status_formatado.append(f"🏥 <b>Local:</b> {escape(valor)}")
+            elif chave.lower() == "endereço do estabelecimento":
+                status_formatado.append(f"📍 <b>Endereço:</b> {escape(valor)}")
+            elif chave.lower() == "telefones para contato":
+                status_formatado.append(f"📞 <b>Telefone:</b> {escape(valor)}")
+            elif chave.lower() == "alerta":
+                alerta_texto = valor
+            elif chave.lower() != "id de regulação":  # Evita repetir o ID no meio do texto
+                status_formatado.append(f"• <b>{escape(chave)}:</b> {escape(valor)}")
+        else:
+            status_formatado.append(escape(item))
+
+    resultado_final = "\n".join(status_formatado)
+
+    # Bloco em destaque para o aviso
+    if alerta_texto:
+        resultado_final += (
+            f"\n\n🚨 <b>ORIENTAÇÃO IMPORTANTE:</b>\n"
+            f"<i>{escape(alerta_texto)}</i>"
+        )
+
+    return resultado_final
+
+
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Monta a mensagem em HTML formatada com Regulação, Cartão SUS (mascarado), Paciente (mascarado), CBO, Procedimento e Status."""
+    """Monta a mensagem em HTML formatada com Regulação, Cartão SUS, Paciente, CBO, Procedimento e Status detalhado."""
     dados = resultado.get("dados", {})
     
     # 1. Nome do paciente com mascaramento LGPD
@@ -208,15 +259,19 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         
     cbo = (reg_db.get("cbo") if reg_db else None) or "Não informado"
     procedimento = (reg_db.get("procedimento") if reg_db else None) or dados.get("procedimento") or "Não informado"
-    status = resultado.get("status_resumido", "Em processamento")
+    
+    # Trata o status recebido da FMS
+    status_bruto = resultado.get("status_resumido", "Em processamento")
+    status_exibicao = _formatar_status_detalhado(status_bruto)
 
     return (
         f"📋 <b>Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
         f"💳 <b>Cartão SUS:</b> <code>{escape(sus_exibicao)}</code>\n"
         f"👤 <b>Paciente:</b> {escape(paciente_exibicao)}\n"
         f"🩺 <b>CBO:</b> {escape(str(cbo))}\n"
-        f"📑 <b>Procedimento:</b> {escape(str(procedimento))}\n"
-        f"📊 <b>Status:</b> {escape(str(status))}"
+        f"📑 <b>Procedimento:</b> {escape(str(procedimento))}\n\n"
+        f"📊 <b>STATUS DO AGENDAMENTO:</b>\n"
+        f"{status_exibicao}"
     )
 
 async def _buscar_paciente_por_sus(numero_sus: str) -> dict:
