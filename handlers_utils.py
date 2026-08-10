@@ -223,13 +223,24 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str) -> dict:
 async def _buscar_regulacoes_db(chat_id: int) -> list:
     """Busca todas as regulações associadas ao Telegram chat_id do usuário."""
     str_chat_id = str(chat_id).strip()
+    int_chat_id = int(chat_id)
+    
     try:
         def query():
-            return supabase.table("AlertaSUS_2.0").select("*").eq("telegram_chat_id", str_chat_id).execute()
+            # Tenta buscar tanto como Int quanto como String para evitar incompatibilidade
+            return (
+                supabase.table("AlertaSUS_2.0")
+                .select("*")
+                .or_(f"telegram_chat_id.eq.{int_chat_id},telegram_chat_id.eq.{str_chat_id}")
+                .execute()
+            )
 
         resp = await asyncio.to_thread(query)
         if resp and getattr(resp, "data", None):
+            logging.info(f"✅ Encontradas {len(resp.data)} regulações para o chat_id {chat_id}")
             return resp.data
+        else:
+            logging.warning(f"⚠️ Nenhuma regulação encontrada no Supabase para o chat_id: {chat_id}")
     except Exception as e:
         logging.error(f"Erro ao consultar Supabase para chat_id {chat_id}: {e}")
     return []
