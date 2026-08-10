@@ -191,59 +191,73 @@ async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.D
 
     return False
 
+import re
+from html import escape
+
 def _formatar_status_detalhado(status_raw: str) -> str:
     """
-    Identifica se o status possui separadores '|' (dados completos de agendamento FMS)
-    e transforma o texto em um layout estruturado e fácil de ler no Telegram.
+    Trata qualquer texto vindo do scraper ou banco de dados que utilize '|' 
+    como separador e o converte em um bloco organizado com quebras de linha.
     """
-    if not status_raw or "|" not in status_raw:
-        return escape(str(status_raw))
+    if not status_raw:
+        return "Em processamento"
 
-    partes = [p.strip() for p in status_raw.split("|") if p.strip()]
-    
-    status_formatado = []
-    alerta_texto = ""
+    texto = str(status_raw).strip()
 
-    for item in partes:
-        if ":" in item:
-            chave, valor = item.split(":", 1)
-            chave = chave.strip()
-            valor = valor.strip()
+    # 1. Remove o prefixo 'Status:' ou 'Status: ' do início do texto, caso exista
+    texto = re.sub(r"^(status:\s*)+", "", texto, flags=re.IGNORECASE).strip()
 
-            # Mapeamento para ícones e formatação amigável
-            if chave.lower() == "situação":
-                status_formatado.append(f"📌 <b>Situação:</b> {escape(valor)}")
-            elif chave.lower() == "data e hora da consulta marcada":
-                status_formatado.append(f"📅 <b>Data/Hora:</b> {escape(valor)}")
-            elif chave.lower() == "autorização do agendamento":
-                status_formatado.append(f"🔑 <b>Autorização:</b> <code>{escape(valor)}</code>")
-            elif chave.lower() == "estabelecimento executante da consulta":
-                status_formatado.append(f"🏥 <b>Local:</b> {escape(valor)}")
-            elif chave.lower() == "endereço do estabelecimento":
-                status_formatado.append(f"📍 <b>Endereço:</b> {escape(valor)}")
-            elif chave.lower() == "telefones para contato":
-                status_formatado.append(f"📞 <b>Telefone:</b> {escape(valor)}")
-            elif chave.lower() == "alerta":
-                alerta_texto = valor
-            elif chave.lower() != "id de regulação":  # Evita repetir o ID no meio do texto
-                status_formatado.append(f"• <b>{escape(chave)}:</b> {escape(valor)}")
-        else:
-            status_formatado.append(escape(item))
+    # Se contiver o separador '|', limpa e quebra por linhas
+    if "|" in texto:
+        partes = [p.strip() for p in texto.split("|") if p.strip()]
+        linhas_formatadas = []
+        alerta_texto = ""
 
-    resultado_final = "\n".join(status_formatado)
+        for item in partes:
+            # Limpa prefixos de 'Status:' residuais em cada item
+            item_limpo = re.sub(r"^(status:\s*)+", "", item, flags=re.IGNORECASE).strip()
 
-    # Bloco em destaque para o aviso
-    if alerta_texto:
-        resultado_final += (
-            f"\n\n🚨 <b>ORIENTAÇÃO IMPORTANTE:</b>\n"
-            f"<i>{escape(alerta_texto)}</i>"
-        )
+            if ":" in item_limpo:
+                chave, valor = item_limpo.split(":", 1)
+                chave = chave.strip()
+                valor = valor.strip()
+                chave_lower = chave.lower()
 
-    return resultado_final
+                # Ignora ID duplicado no meio do texto
+                if "id de regulação" in chave_lower or "id de regulacao" in chave_lower:
+                    continue
+                elif "situação" in chave_lower or "situacao" in chave_lower:
+                    linhas_formatadas.append(f"📌 <b>Situação:</b> {escape(valor)}")
+                elif "data" in chave_lower or "consulta marcada" in chave_lower:
+                    linhas_formatadas.append(f"📅 <b>Data/Hora:</b> {escape(valor)}")
+                elif "autorização" in chave_lower or "autorizacao" in chave_lower:
+                    linhas_formatadas.append(f"🔑 <b>Autorização:</b> <code>{escape(valor)}</code>")
+                elif "estabelecimento" in chave_lower or "executante" in chave_lower:
+                    linhas_formatadas.append(f"🏥 <b>Local:</b> {escape(valor)}")
+                elif "endereço" in chave_lower or "endereco" in chave_lower:
+                    linhas_formatadas.append(f"📍 <b>Endereço:</b> {escape(valor)}")
+                elif "telefone" in chave_lower or "contato" in chave_lower:
+                    linhas_formatadas.append(f"📞 <b>Telefone:</b> {escape(valor)}")
+                elif "alerta" in chave_lower or "observação" in chave_lower:
+                    alerta_texto = valor
+                else:
+                    linhas_formatadas.append(f"• <b>{escape(chave)}:</b> {escape(valor)}")
+            else:
+                linhas_formatadas.append(escape(item_limpo))
+
+        resultado = "\n".join(linhas_formatadas)
+
+        if alerta_texto:
+            resultado += f"\n\n🚨 <b>ORIENTAÇÃO IMPORTANTE:</b>\n<i>{escape(alerta_texto)}</i>"
+
+        return resultado
+
+    # Se não tiver '|', retorna apenas o texto limpo
+    return escape(texto)
 
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Monta a mensagem em HTML formatada com Regulação, Cartão SUS, Paciente, CBO, Procedimento e Status detalhado."""
+    """Monta a mensagem em HTML formatada e com quebras de linha corretas no status."""
     dados = resultado.get("dados", {})
     
     # 1. Nome do paciente com mascaramento LGPD
@@ -260,8 +274,8 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
     cbo = (reg_db.get("cbo") if reg_db else None) or "Não informado"
     procedimento = (reg_db.get("procedimento") if reg_db else None) or dados.get("procedimento") or "Não informado"
     
-    # Trata o status recebido da FMS
-    status_bruto = resultado.get("status_resumido", "Em processamento")
+    # Extrai o status retornado do scraper ou do banco de dados
+    status_bruto = resultado.get("status_resumido") or resultado.get("status") or "Em processamento"
     status_exibicao = _formatar_status_detalhado(status_bruto)
 
     return (
