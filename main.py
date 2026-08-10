@@ -12,18 +12,23 @@ from telegram.ext import (
 from config import TELEGRAM_BOT_TOKEN
 
 # --------------------------------------------------
-# IMPORTAÇÕES MODULARIZADAS - CORRETO
+# IMPORTAÇÃO ÚNICA A PARTIR DE handler.py
+# --------------------------------------------------
+# ATENÇÃO: O projeto usa um ÚNICO arquivo handler.py com
+# todas as funções, e não 6 módulos separados
+# (handlers_base, handlers_cadastro, etc.) que não existem
+# no repositório. É por isso que o Railway dava
+# "ModuleNotFoundError: No module named 'handlers_base'".
 # --------------------------------------------------
 
-from handlers_base import (
-    start,
-    comando_ajuda,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    executar_varredura_automatica
-)
-
-from handlers_cadastro import (
+from handler import (
+    # Estados de conversação
+    CONSULTAR_ID,
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -32,6 +37,20 @@ from handlers_cadastro import (
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD,
+
+    # Handlers base
+    start,
+    comando_ajuda,
+    cancelar_operacao,
+    configurar_menu_comandos,
+    executar_varredura_automatica,
+
+    # Consulta
+    comando_verificar_todas,
+    iniciar_verificar_especifico,
+    processar_verificar_especifico,
+
+    # Cadastro
     iniciar_cadastro_manual,
     receber_sus,
     receber_nome,
@@ -40,39 +59,21 @@ from handlers_cadastro import (
     receber_regulacao,
     receber_cbo,
     receber_procedimento,
-    finalizar_cadastro
-)
+    finalizar_cadastro,
 
-from handlers_consulta import (
-    comando_verificar_todas,
-    iniciar_verificar_especifico,
-    processar_verificar_especifico
-)
-
-from handlers_utils import CONSULTAR_ID
-
-# Handlers de Correção
-from handlers_correcao import (
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
+    # Correção
     iniciar_corrigir,
     selecionar_regulacao_callback,
     selecionar_campo_callback,
     salvar_novo_valor,
-    cancelar_corrigir
-)
+    cancelar_corrigir,
 
-# Handlers de Exclusão
-from handlers_exclusao import (
-    SELECIONAR_REGULACAO_EXCLUIR,
-    CONFIRMAR_EXCLUSAO,
+    # Exclusão
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
     confirmar_exclusao_callback,
-    cancelar_excluir
+    cancelar_excluir,
 )
-
 
 # Configuração de Logs
 logging.basicConfig(
