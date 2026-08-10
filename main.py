@@ -10,14 +10,21 @@ from telegram.ext import (
 )
 
 from config import TELEGRAM_BOT_TOKEN
-from handlers import (
-    # Estados
-    CONSULTAR_ID,
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
-    SELECIONAR_REGULACAO_EXCLUIR,
-    CONFIRMAR_EXCLUSAO,
+
+# --------------------------------------------------
+# IMPORTAÇÕES MODULARIZADAS PELAS SUBDIVISÕES
+# --------------------------------------------------
+
+# Handlers Base e Utilitários
+from handlers_base import (
+    start,
+    comando_ajuda,
+    cancelar_operacao,
+    configurar_menu_comandos
+)
+
+# Handlers de Cadastro
+from handlers_cadastro import (
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -26,10 +33,6 @@ from handlers import (
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD,
-    # Comandos e Handlers
-    start,
-    comando_ajuda,
-    comando_verificar_todas,
     iniciar_cadastro_manual,
     receber_sus,
     receber_nome,
@@ -38,22 +41,40 @@ from handlers import (
     receber_regulacao,
     receber_cbo,
     receber_procedimento,
-    finalizar_cadastro,
+    finalizar_cadastro
+)
+
+# Handlers de Consulta
+from handlers_consulta import (
+    CONSULTAR_ID,
+    comando_verificar_todas,
     iniciar_verificar_especifico,
     processar_verificar_especifico,
+    executar_varredura_automatica
+)
+
+# Handlers de Correção
+from handlers_correcao import (
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
     iniciar_corrigir,
     selecionar_regulacao_callback,
     selecionar_campo_callback,
     salvar_novo_valor,
-    cancelar_corrigir,
+    cancelar_corrigir
+)
+
+# Handlers de Exclusão
+from handlers_exclusao import (
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
     confirmar_exclusao_callback,
-    cancelar_excluir,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    executar_varredura_automatica
+    cancelar_excluir
 )
+
 
 # Configuração de Logs
 logging.basicConfig(
