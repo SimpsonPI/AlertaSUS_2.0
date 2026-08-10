@@ -89,16 +89,22 @@ conv_cadastro = ConversationHandler(
     per_message=False
 )
 
-# 2. Verificar Específico
+# 2. Verificar Específico (Com suporte a seleção por Botões Inline e digitação manual)
 conv_verificar_especifico = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
         CommandHandler("consultar", iniciar_verificar_especifico)
     ],
     states={
-        CONSULTAR_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)]
+        CONSULTAR_ID: [
+            CallbackQueryHandler(processar_verificar_especifico, pattern="^(ver_esp_|cancelar_ver_esp)$"),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)
+        ]
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_operacao)],
+    fallbacks=[
+        CommandHandler("cancelar", cancelar_operacao),
+        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_operacao)
+    ],
     allow_reentry=True,
     per_message=False
 )
