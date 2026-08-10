@@ -113,7 +113,7 @@ def _extrair_id_e_nome(reg: dict):
     
     # Se por algum motivo o campo estiver vazio ou None, exibe 'S/N'
     if not num_id:
-        num_id = "S/N"
+        num_id = "numero_reg"
 
     nome = (
         reg.get("nome_paciente") or 
@@ -121,7 +121,7 @@ def _extrair_id_e_nome(reg: dict):
         reg.get("nome") or 
         "Paciente não informado"
     )
-    return str(num_id), str(nome)
+    return str(num_id), str(nome)   
 
 async def configurar_menu_comandos(app):
     """Configura o menu de comandos do Telegram (botão azul)."""
