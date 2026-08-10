@@ -17,7 +17,10 @@ from handlers_utils import (
     _buscar_regulacao_por_id_reg,
     _buscar_regulacoes_db
 )
-from handlers_base import verificar_se_e_menu_e_executar
+from handlers_base import (
+    verificar_se_e_menu_e_executar,
+    executar_varredura_automatica  # <-- Adicione esta linha
+)
 
 
 @rate_limit(max_mensagens=5, janela_segundos=60)

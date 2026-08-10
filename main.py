@@ -45,12 +45,11 @@ from handlers_cadastro import (
 )
 
 # Handlers de Consulta
-from handlers_consulta import (
+from handlers_base import executar_varredura_automatica
     CONSULTAR_ID,
     comando_verificar_todas,
     iniciar_verificar_especifico,
     processar_verificar_especifico,
-    executar_varredura_automatica
 )
 
 # Handlers de Correção
