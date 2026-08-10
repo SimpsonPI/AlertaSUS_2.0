@@ -22,7 +22,7 @@ except ImportError:
     VARREDURA_INTERVALO_MINUTOS = 30
 
 from database import (
-    buscar_regulacoes_por_usuario,
+    buscar_regulacoes_por_chat_id as buscar_regulacoes_por_usuario,
     buscar_todas_regulacoes_ativas,
     salvar_regulacao,
     atualizar_campo_regulacao,
