@@ -190,8 +190,9 @@ def main():
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
     app.add_handler(CommandHandler("verificar", comando_verificar_todas))
 
-    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
-    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
+    app.add_handler(MessageHandler(filters.Regex("(?i).*Verificar Todas.*"), comando_verificar_todas))
+    app.add_handler(MessageHandler(filters.Regex("(?i).*Verificar Específico.*"), iniciar_verificar_especifico))
+    app.add_handler(MessageHandler(filters.Regex("(?i).*Ajuda.*"), comando_ajuda))
 
     # Configura o menu de comandos azul do Telegram ao iniciar
     app.post_init = configurar_menu_comandos
