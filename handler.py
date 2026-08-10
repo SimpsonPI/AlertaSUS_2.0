@@ -103,14 +103,18 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # --------------------------------------------------
 
 def _extrair_id_e_nome(reg: dict):
-    """Extrai o número identificador da regulação e o nome do paciente."""
+    """Extrai o número da regulação (SUS) e o nome do paciente, ignorando o ID interno do banco."""
+    # Busca estritamente pelas colunas que armazenam o número da regulação/solicitação
     num_id = (
         reg.get("numero_regulacao") or 
         reg.get("numero_solicitacao") or 
-        reg.get("id_regulacao") or 
-        reg.get("id") or 
-        "S/N"
+        reg.get("id_regulacao")
     )
+    
+    # Se por algum motivo o campo estiver vazio ou None, exibe 'S/N'
+    if not num_id:
+        num_id = "S/N"
+
     nome = (
         reg.get("nome_paciente") or 
         reg.get("paciente") or 
