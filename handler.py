@@ -679,3 +679,19 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=telegram_id, text=msg_notificacao, parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"Erro ao enviar notificação para {telegram_id}: {e}")
+
+
+# --------------------------------------------------
+# ALIASES DE COMPATIBILIDADE PARA O MAIN.PY
+# --------------------------------------------------
+
+async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Função de entrada para o fluxo de consulta específica."""
+    if update.message:
+        await update.message.reply_text(
+            "🔎 Por favor, digite o <b>número da regulação</b> que deseja consultar:",
+            parse_mode="HTML",
+            reply_markup=TECLADO_CANCELAR
+        )
+        return CONSULTAR_ID
+    return await processar_verificar_especifico(update, context)
