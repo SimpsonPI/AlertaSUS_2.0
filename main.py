@@ -16,41 +16,14 @@ from config import TELEGRAM_BOT_TOKEN
 # --------------------------------------------------
 
 # Handlers Base
-from handlers_base import (
-    start,
-    comando_ajuda,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    executar_varredura_automatica
-)
+# Handlers Base
+from handlers_base import start, comando_ajuda, cancelar_operacao, configurar_menu_comandos, executar_varredura_automatica
 
 # Handlers de Cadastro
-from handlers_cadastro import (
-    ETAPA_SUS,
-    ETAPA_NOME,
-    ETAPA_CELULAR,
-    ETAPA_NASCIMENTO,
-    ETAPA_REGULACAO,
-    ETAPA_CBO,
-    ETAPA_PROCEDIMENTO,
-    ETAPA_LGPD,
-    iniciar_cadastro_manual,
-    receber_sus,
-    receber_nome,
-    receber_celular,
-    receber_nascimento,
-    receber_regulacao,
-    receber_cbo,
-    receber_procedimento,
-    finalizar_cadastro
-)
+from handlers_cadastro import ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO, ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD, iniciar_cadastro_manual, receber_sus, receber_nome, receber_celular, receber_nascimento, receber_regulacao, receber_cbo, receber_procedimento, finalizar_cadastro
 
 # Handlers de Consulta
-from handlers_consulta import (
-    comando_verificar_todas,
-    iniciar_verificar_especifico,
-    processar_verificar_especifico
-)
+from handlers_consulta import comando_verificar_todas, iniciar_verificar_especifico, processar_verificar_especifico
 
 # Utilitários e Estados
 from handlers_utils import CONSULTAR_ID
