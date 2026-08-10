@@ -104,7 +104,6 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 
 def _extrair_id_e_nome(reg: dict):
     """Extrai o número da regulação (numero_reg) e o nome do paciente."""
-    # Busca direta priorizando 'numero_reg' e 'num_reg'
     num_id = (
         reg.get("numero_reg") or 
         reg.get("num_reg") or 
@@ -122,6 +121,20 @@ def _extrair_id_e_nome(reg: dict):
     )
     
     return str(num_id), str(nome)
+
+
+async def configurar_menu_comandos(app):
+    """Configura o menu de comandos do Telegram (botão azul)."""
+    comandos = [
+        BotCommand("start", "Inicia o bot e exibe o menu principal"),
+        BotCommand("verificar", "Verifica o status de todas as suas regulações"),
+        BotCommand("consultar", "Consulta o status de uma regulação específica"),
+        BotCommand("cadastrar", "Cadastra uma nova regulação"),
+        BotCommand("corrigir", "Corrigi dados de uma regulação cadastrada"),
+        BotCommand("excluir", "Exclui uma regulação cadastrada"),
+        BotCommand("ajuda", "Exibe as instruções de uso do sistema")
+    ]
+    await app.bot.set_my_commands(comandos)
 
 # --------------------------------------------------
 # HANDLERS BASE E COMANDOS DIRECTOS
