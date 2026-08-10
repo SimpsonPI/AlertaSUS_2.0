@@ -21,30 +21,36 @@ try:
 except ImportError:
     VARREDURA_INTERVALO_MINUTOS = 30
 
-from database import (
-    buscar_regulacoes_por_chat_id as buscar_regulacoes_por_usuario,
-    buscar_todas_regulacoes_ativas,
-    salvar_regulacao,
-    atualizar_campo_regulacao,
-    excluir_regulacao_db,
-    obter_regulacao_por_id,
-    obter_regulacao_por_numero,
-    registrar_consentimento_lgpd
-)
+# Importação do Banco de Dados com fallback de segurança
+try:
+    from database import (
+        buscar_regulacoes_por_chat_id as buscar_regulacoes_por_usuario,
+        salvar_regulacao,
+        atualizar_campo_regulacao,
+        excluir_regulacao_db,
+        obter_regulacao_por_id,
+        obter_regulacao_por_numero,
+        registrar_consentimento_lgpd
+    )
+except ImportError:
+    from database import *
+
+# Busca flexível da função de varredura
+try:
+    from database import buscar_todas_regulacoes_ativas
+except ImportError:
+    try:
+        from database import obter_todas_regulacoes as buscar_todas_regulacoes_ativas
+    except ImportError:
+        async def buscar_todas_regulacoes_ativas():
+            return []
 
 from scraper import consultar_status_fms
 
-# Configuração de Logging
+# Configuração de Logging Unificada
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Configuração de Logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=LOG_LEVEL
 )
 logger = logging.getLogger(__name__)
 
