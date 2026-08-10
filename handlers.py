@@ -22,7 +22,6 @@ from telegram import (
 from database import (
     buscar_regulacoes_por_chat_id,
     deletar_regulacao_por_id,
-    # ... mantenha aqui as outras funções do banco que você já usa
 )
 
 # 2. Manipuladores de eventos e fluxos de conversa
@@ -49,8 +48,28 @@ AVISO_PRIVADO_HTML = (
 )
 
 # ==========================================
-# FUNÇÕES DE PROTEÇÃO E ANONIMIZAÇÃO (LGPD)
+# FUNÇÕES DE FORMATACAO, MÁSCARAS E LGPD
 # ==========================================
+def limpar_telefone(texto: str) -> str:
+    """Remove tudo que não for dígito e garante apenas os números do telefone."""
+    return re.sub(r"\D", "", texto)
+
+def formatar_data_nascimento(texto: str) -> str | None:
+    """
+    Recebe apenas números (ex: 15081990) ou com barra (15/08/1990)
+    e formata/valida automaticamente para DD/MM/AAAA.
+    """
+    numeros = re.sub(r"\D", "", texto)
+    if len(numeros) == 8:
+        dia, mes, ano = numeros[:2], numeros[2:4], numeros[4:]
+        if 1 <= int(dia) <= 31 and 1 <= int(mes) <= 12 and 1900 <= int(ano) <= 2100:
+            return f"{dia}/{mes}/{ano}"
+    return None
+
+def para_maiusculo(texto: str) -> str:
+    """Converte o texto digitado para MAIÚSCULAS e remove espaços extras."""
+    return texto.strip().upper()
+
 def mascarar_sus(numero_sus: str) -> str:
     """Mascara o número do Cartão SUS para logs de terminal (Ex: 898************89)"""
     if not numero_sus or len(str(numero_sus)) < 5:
@@ -75,12 +94,12 @@ def mascarar_nome(nome: str) -> str:
 (
     CONSULTAR_ID,
     # --- ESTADOS DA CENTRAL DE CORREÇÃO INTERATIVA ---
-SELECIONAR_REGULACAO,
-SELECIONAR_CAMPO,
-AGUARDAR_NOVO_VALOR,
-# --- ESTADOS DE EXCLUSÃO INTERATIVA ---
-SELECIONAR_REGULACAO_EXCLUIR,
-CONFIRMAR_EXCLUSAO,
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
+    # --- ESTADOS DE EXCLUSÃO INTERATIVA ---
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     # --- ESTADOS DO FORMULÁRIO INTERATIVO NO BOT ---
     ETAPA_SUS,
     ETAPA_NOME,
@@ -246,7 +265,7 @@ async def _buscar_regulacoes_db(chat_id: int) -> list:
 # 4. COMANDOS BÁSICOS E NAVEGAÇÃO
 # ==========================================
 
-# 1. Definição da constante (uma única vez, antes de qualquer decorador)
+# 1. Definição da constante
 AVISO_PRIVADO_HTML = (
     "<blockquote>🔒 <b>AVISO IMPORTANTE</b>\n"
     "Esta é uma <b>ferramenta privada e particular</b> desenvolvida para auxílio no acompanhamento de regulações.\n"
@@ -269,25 +288,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # 3. Comando /ajuda
-@rate_limit(max_mensagens=5, janela_segundos=60)
-async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()
-    chat_id = update.effective_chat.id
-    texto_ajuda = (
-        "ℹ️ <b>Central de Ajuda - AlertaSUS 2.0</b>\n\n"
-        f"🔑 <b>Seu ID do Chat:</b> <code>{chat_id}</code>\n\n"
-        f"{AVISO_PRIVADO_HTML}\n\n"
-        "• <b>➕ Cadastrar Nova:</b> Cadastre seus dados e ID de Regulação passo a passo.\n"
-        "• <b>📋 Verificar Todas:</b> Consulta o status de todos os seus IDs cadastrados.\n"
-        "• <b>🔍 Verificar Específico:</b> Consulta um único ID informado na hora.\n"
-        "• <b>✏️ Corrigir ID:</b> Altera ID, Cartão SUS ou Nome de uma regulação de forma interativa.\n"
-        "• <b>❌ Excluir Regulação:</b> Remove um ID mediante confirmação.\n\n"
-        "⏰ <b>Varreduras automáticas:</b> Diariamente às 08:00 e 18:00."
-    )
-    await update.message.reply_text(texto_ajuda, reply_markup=TECLADO_MENU, parse_mode="HTML")
-    return ConversationHandler.END
-
-
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -338,7 +338,6 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     context.user_data['numero_sus'] = numero_sus
     
-    # Verifica se o Cartão SUS já tem cadastro prévio no banco
     msg_aguarde = await update.message.reply_text("🔍 <i>Verificando dados do Cartão SUS no sistema...</i>", parse_mode="HTML")
     paciente_existente = await _buscar_paciente_por_sus(numero_sus)
     await msg_aguarde.delete()
@@ -371,9 +370,12 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["nome_paciente"] = update.message.text.strip()
+    # Converte o nome digitado automaticamente para MAIÚSCULAS
+    nome_formatado = para_maiusculo(update.message.text)
+    context.user_data["nome_paciente"] = nome_formatado
+
     await update.message.reply_text(
-        "3️⃣ Qual o <b>Celular / WhatsApp</b> com DDD?\n<i>Exemplo: (86) 99999-9999</i>",
+        "3️⃣ Qual o <b>Celular / WhatsApp</b> com DDD?\n<i>Digite apenas os números (ex: 86999999999)</i>",
         reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
@@ -383,9 +385,22 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["celular"] = update.message.text.strip()
+    # Garante apenas números
+    celular_limpo = limpar_telefone(update.message.text)
+
+    # Valida telefone com DDD (10 ou 11 dígitos)
+    if len(celular_limpo) not in (10, 11):
+        await update.message.reply_text(
+            "⚠️ <b>Telefone inválido!</b>\nDigite apenas os números com DDD (ex: <code>86999999999</code>):",
+            reply_markup=TECLADO_CANCELAR,
+            parse_mode="HTML"
+        )
+        return ETAPA_CELULAR
+
+    context.user_data["celular"] = celular_limpo
+
     await update.message.reply_text(
-        "4️⃣ Qual a <b>Data de Nascimento</b>?\n<i>Use o formato: DD/MM/AAAA</i>",
+        "4️⃣ Qual a <b>Data de Nascimento</b>?\n<i>Digite apenas os 8 números (ex: 15081990)</i>",
         reply_markup=TECLADO_CANCELAR,
         parse_mode="HTML"
     )
@@ -395,13 +410,18 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    texto_data = update.message.text.strip()
-    try:
-        data_obj = datetime.strptime(texto_data, "%d/%m/%Y")
-        data_formatada = data_obj.strftime("%Y-%m-%d")
-        context.user_data["data_nascimento"] = data_formatada
-    except ValueError:
-        context.user_data["data_nascimento"] = texto_data
+    texto_data = update.message.text
+    data_formatada = formatar_data_nascimento(texto_data)
+
+    if not data_formatada:
+        await update.message.reply_text(
+            "⚠️ <b>Data de Nascimento inválida!</b>\nDigite apenas os 8 números no formato DDMMAAAA (ex: <code>15081990</code>):",
+            reply_markup=TECLADO_CANCELAR,
+            parse_mode="HTML"
+        )
+        return ETAPA_NASCIMENTO
+
+    context.user_data["data_nascimento"] = data_formatada
 
     await update.message.reply_text(
         "5️⃣ Digite o <b>Número de Regulação (ID)</b>:\n<i>(Apenas números, ex: 12345678)</i>",
@@ -449,7 +469,8 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["cbo"] = update.message.text.strip()
+    # Converte CBO para MAIÚSCULAS
+    context.user_data["cbo"] = para_maiusculo(update.message.text)
     
     procedimento_sugerido = context.user_data.get("procedimento_sugerido", "")
     msg_extra = f"\n<i>(Identificado na FMS: {procedimento_sugerido})</i>" if procedimento_sugerido else ""
@@ -465,7 +486,8 @@ async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYP
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["procedimento"] = update.message.text.strip()
+    # Converte Procedimento para MAIÚSCULAS
+    context.user_data["procedimento"] = para_maiusculo(update.message.text)
 
     termo_lgpd = (
         "<b>🔒 Termo de Consentimento (LGPD)</b>\n\n"
@@ -613,7 +635,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     return ConversationHandler.END
 
 # ==========================================
-# 7. CENTRAL DE CORREÇÃO INTERATIVA (BOTOES INLINE)
+# 7. CENTRAL DE CORREÇÃO INTERATIVA (BOTÕES INLINE)
 # ==========================================
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
@@ -719,9 +741,13 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ConversationHandler.END
 
     novo_valor = update.message.text.strip()
-    numero_reg_antigo = context.user_data.get("reg_corrigir")
+
     campo = context.user_data.get("campo_corrigir")
+    numero_reg_antigo = context.user_data.get("reg_corrigir")
     chat_id = update.effective_chat.id
+
+    if campo == "nome_paciente":
+        novo_valor = para_maiusculo(novo_valor)
 
     if campo in ["numero_reg", "numero_sus"] and not novo_valor.isdigit():
         await update.message.reply_text("⚠️ O valor digitado deve conter apenas números. Tente novamente:")
@@ -778,7 +804,7 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 # ==========================================
-# EXCLUSÃO INTERATIVA DE REGULAÇÃO
+# 8. EXCLUSÃO INTERATIVA DE REGULAÇÃO
 # ==========================================
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -801,7 +827,6 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             num_reg = reg.get("numero_reg", "N/A")
             nome_completo = reg.get("nome_paciente", "").strip()
 
-            # Lógica de formatação: PRIMEIRO NOME + Iniciais dos Sobrenomes (Ex: RIVKA S. P. O.)
             partes = nome_completo.split()
             if partes:
                 primeiro_nome = partes[0].upper()
@@ -841,24 +866,6 @@ async def selecionar_regulacao_excluir_callback(update: Update, context: Context
     if query.data == "cancelar_excluir":
         await query.edit_message_text("❌ **Operação cancelada.**", parse_mode="Markdown")
         return ConversationHandler.END
-
-    num_reg = query.data.replace("excluir_sel_", "")
-    context.user_data["regulacao_para_excluir"] = num_reg
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Confirmar Exclusão", callback_data="confirmar_exclusao")],
-        [InlineKeyboardButton("🚫 Cancelar", callback_data="cancelar_excluir")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    texto = (
-        f"⚠️ **Atenção!**\n\n"
-        f"Tem certeza que deseja excluir a regulação **{num_reg}**?\n"
-        f"Esta ação não poderá ser desfeita."
-    )
-
-    await query.edit_message_text(texto, reply_markup=reply_markup, parse_mode="Markdown")
-    return CONFIRMAR_EXCLUSAO
 
     num_reg = query.data.replace("excluir_sel_", "")
     context.user_data["regulacao_para_excluir"] = num_reg
