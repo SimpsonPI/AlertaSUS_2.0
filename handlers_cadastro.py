@@ -15,7 +15,8 @@ from handlers_utils import (
     limpar_telefone, formatar_data_nascimento, para_maiusculo,
     _buscar_paciente_por_sus
 )
-from handlers)base import verificar_se_e_menu_e_executar
+# Como deve ficar (correto):
+from handlers_base import verificar_se_e_menu_e_executar
 
 @rate_limit(max_mensagens=5, janela_segundos=60)
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
