@@ -713,8 +713,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
 
-        texto = update.message.text.strip()
-        numero_reg = re.sub(r"\D", "", texto)
+        texto = update.message.text.strip()  # <-- Exatamente 8 espaços antes de "texto"
 
         if not numero_reg:
             await update.message.reply_text(
