@@ -1,5 +1,7 @@
 import os
 import re
+import random
+import asyncio
 import logging
 import httpx
 from bs4 import BeautifulSoup
@@ -34,7 +36,11 @@ def nome_paciente_exibicao(nome: str | None) -> str:
         return "Não informado"
     return nome.strip()
 
-async def consultar_status_fms(numero_reg: str) -> dict:
+async def consultar_status_fms(numero_reg: str, max_tentativas: int = 3) -> dict:
+    # 🛡️ Proteção Antibloqueio / Anti-burst (Jitter)
+    atraso = random.uniform(1.5, 3.5)
+    await asyncio.sleep(atraso)
+
     if not SCRAPER_KEY:
         logging.error("A variável de ambiente SCRAPER_KEY não foi configurada.")
         return {"sucesso": False, "mensagem": "Erro de configuração no servidor."}
@@ -42,76 +48,85 @@ async def consultar_status_fms(numero_reg: str) -> dict:
     url_fms_target = f"{URL_BUSCA_FMS}?number_id={numero_reg}"
     scraper_url = f"http://api.scraperapi.com?api_key={SCRAPER_KEY}&url={url_fms_target}&country_code=br"
 
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            resposta = await client.get(scraper_url)
+    # 🔄 Loop de tentativas automáticas em caso de instabilidade ou timeout
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=35.0) as client:
+                resposta = await client.get(scraper_url)
 
-            if resposta.status_code != 200:
-                logging.error(f"Erro HTTP {resposta.status_code} na ScraperAPI.")
-                return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
+                if resposta.status_code != 200:
+                    logging.warning(f"Tentativa {tentativa}/{max_tentativas} - Erro HTTP {resposta.status_code} na ScraperAPI.")
+                    if tentativa < max_tentativas:
+                        await asyncio.sleep(2)
+                        continue
+                    return {"sucesso": False, "mensagem": f"Erro HTTP {resposta.status_code}"}
 
-            soup = BeautifulSoup(resposta.text, "html.parser")
-            texto_pagina = soup.get_text().lower()
+                soup = BeautifulSoup(resposta.text, "html.parser")
+                texto_pagina = soup.get_text().lower()
 
-            if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
+                if "nenhum registro" in texto_pagina or "não encontrado" in texto_pagina:
+                    return {
+                        "sucesso": False,
+                        "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS."
+                    }
+
+                card = soup.find("div", class_="card-body") or soup
+
+                # Captura blocos de alertas e avisos (ex: Revalidação / UBS)
+                alertas = [
+                    re.sub(r"\s+", " ", a.get_text(" ", strip=True))
+                    for a in card.find_all("div", class_=re.compile(r"alert"))
+                ]
+                alerta_texto = "\n".join(alertas) if alertas else None
+
+                # Extrai os pares rótulo (h4) -> valor (p)
+                campos = {}
+                for h4 in card.find_all("h4", class_="card-title") or soup.find_all("h4"):
+                    rotulo = h4.get_text(strip=True)
+                    if not rotulo or "_" in rotulo:
+                        continue
+                    p = h4.find_next_sibling("p")
+                    if not p and h4.parent:
+                        p = h4.parent.find("p", class_="card-text")
+                    if p:
+                        valor = re.sub(r"\s+", " ", p.get_text(" ", strip=True)).strip()
+                        if valor:
+                            campos[rotulo] = valor
+
+                situacao = campos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação") or "Informada no portal"
+                posicao_fila = campos.get("Posição da Fila") or _extrair_valor_campo_fms(soup, "Posição da Fila") or "Não informada"
+                previsao_atendimento = campos.get("Previsão de atendimento") or _extrair_valor_campo_fms(soup, "Previsão de atendimento") or "Não informada"
+
+                # Se a página respondeu mas veio vazia por falha no carregamento, tenta novamente
+                if not campos and situacao == "Informada no portal" and not alerta_texto:
+                    if tentativa < max_tentativas:
+                        logging.warning(f"Tentativa {tentativa}/{max_tentativas} - Conteúdo incompleto para a Regulação {numero_reg}. Re-tentando...")
+                        await asyncio.sleep(2)
+                        continue
+
+                partes_resumo = [f"{k}: {v}" for k, v in campos.items()]
+                if alerta_texto:
+                    partes_resumo.append(f"Alerta: {alerta_texto}")
+
+                status_resumido = " | ".join(partes_resumo) if partes_resumo else f"Fila: {posicao_fila} | Previsão: {previsao_atendimento}"
+
                 return {
-                    "sucesso": False,
-                    "mensagem": f"⚠️ A regulação *{numero_reg}* não foi encontrada no portal da FMS."
+                    "sucesso": True,
+                    "encontrado": True,
+                    "situacao": situacao,
+                    "posicao_fila": posicao_fila,
+                    "previsao_atendimento": previsao_atendimento,
+                    "alerta_fms": alerta_texto,
+                    "campos": campos,
+                    "status_resumido": status_resumido
                 }
 
-            tabela = soup.find("table")
-            if not tabela:
-                logging.warning(f"Tabela não encontrada no HTML para a regulação {numero_reg}.")
-                return {"sucesso": False, "mensagem": "⚠️ Não foi possível extrair a tabela de dados da FMS."}
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            logging.warning(f"Tentativa {tentativa}/{max_tentativas} falhou por conexão/timeout na FMS (Reg {numero_reg}): {e}")
+            if tentativa < max_tentativas:
+                await asyncio.sleep(2.5)
 
-            card = soup.find("div", class_="card-body") or soup
-
-            alertas = [
-                re.sub(r"\s+", " ", a.get_text(" ", strip=True))
-                for a in card.find_all("div", class_=re.compile(r"alert"))
-            ]
-            alerta_texto = "\n".join(alertas) if alertas else None
-
-            campos = {}
-            for h4 in card.find_all("h4", class_="card-title"):
-                rotulo = h4.get_text(strip=True)
-                if not rotulo or "_" in rotulo:
-                    continue
-                p = h4.find_next_sibling("p")
-                if not p and h4.parent:
-                    p = h4.parent.find("p", class_="card-text")
-                if p:
-                    valor = re.sub(r"\s+", " ", p.get_text(" ", strip=True)).strip()
-                    if valor:
-                        campos[rotulo] = valor
-
-            situacao = campos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação") or "Informada no portal"
-            posicao_fila = campos.get("Posição da Fila") or _extrair_valor_campo_fms(soup, "Posição da Fila") or "Não informada"
-            previsao_atendimento = campos.get("Previsão de atendimento") or _extrair_valor_campo_fms(soup, "Previsão de atendimento") or "Não informada"
-
-            partes_resumo = [f"{k}: {v}" for k, v in campos.items()]
-            if alerta_texto:
-                partes_resumo.append(f"Alerta: {alerta_texto}")
-
-            status_resumido = " | ".join(partes_resumo) if partes_resumo else f"Fila: {posicao_fila} | Previsão: {previsao_atendimento}"
-
-            return {
-                "sucesso": True,
-                "encontrado": True,
-                "situacao": situacao,
-                "posicao_fila": posicao_fila,
-                "previsao_atendimento": previsao_atendimento,
-                "alerta_fms": alerta_texto,
-                "campos": campos,
-                "status_resumido": status_resumido
-            }
-
-    except httpx.TimeoutException:
-        logging.warning(f"Timeout ao conectar no portal da FMS (Reg {numero_reg}).")
-        return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
-    except Exception as e:
-        logging.error(f"Falha ao conectar no portal da FMS (Reg {numero_reg}): {e}")
-        return {"sucesso": False, "mensagem": str(e)}
+    return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
 
 def montar_mensagem_regulacao(
     numero_reg: str,
