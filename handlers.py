@@ -145,11 +145,10 @@ TECLADO_CONFIRMACAO = ReplyKeyboardMarkup(
 # ==========================================
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Intercepta cliques do menu ou cancelamentos durante conversas ativas."""
     if not update.message or not update.message.text:
         return False
 
-    texto = update.message.text.strip()
+    texto = update.message.text.strip()  # <-- Linha 785 alinhada com o 'if' acima (4 espaços)
 
     if "Cancelar" in texto or texto == "/cancelar":
         await cancelar_operacao(update, context)
@@ -711,10 +710,12 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     # 2. Trata se a entrada veio de TEXTO DIGITADO
     else:
+        # Exemplo do alinhamento correto:
+    else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
 
-        texto = update.message.text.strip()
+        texto = update.message.text  # <-- Linha 785 precisa ter exatamente 8 espaços antes dela
         numero_reg = re.sub(r"\D", "", texto)
 
         if not numero_reg:
