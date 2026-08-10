@@ -31,6 +31,7 @@ from database import (
     obter_regulacao_por_numero,
     registrar_consentimento_lgpd
 )
+
 from scraper import consultar_status_fms
 
 # Configuração de Logging
