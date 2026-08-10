@@ -710,12 +710,10 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     # 2. Trata se a entrada veio de TEXTO DIGITADO
     else:
-        # Exemplo do alinhamento correto:
-    else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
 
-        texto = update.message.text  # <-- Linha 785 precisa ter exatamente 8 espaços antes dela
+        texto = update.message.text.strip()
         numero_reg = re.sub(r"\D", "", texto)
 
         if not numero_reg:
@@ -730,7 +728,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             parse_mode="HTML"
         )
 
-    # 3. Lógica de consulta (banco de dados e FMS)
+    # 3. Lógica de consulta no Banco e na FMS
     reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
     resultado = await consultar_status_fms(numero_reg)
 
