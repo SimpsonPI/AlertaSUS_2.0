@@ -693,19 +693,64 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     """Processa o ID escolhido via botão Inline ou digitado manualmente."""
     query = update.callback_query
 
+    # 1. Trata se a entrada veio de um BOTÃO INLINE
     if query:
         await query.answer()
+        
         if query.data == "cancelar_ver_esp":
             await query.edit_message_text("❌ Operação de consulta cancelada.")
             await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
             context.user_data.clear()
             return ConversationHandler.END
 
+        # Extrai o número da regulação do callback_data
         numero_reg = query.data.replace("ver_esp_", "")
-        await query.edit_message_text(f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", parse_mode="HTML")
+        
+        # Edita a mensagem do botão avisando que a consulta iniciou
+        await query.edit_message_text(
+            f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", 
+            parse_mode="HTML"
+        )
+
+    # 2. Trata se a entrada veio de TEXTO DIGITADO
     else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
+            
+        numero_reg = update.message.text.strip()
+        await update.message.reply_text(
+            f"🔎 Consultando ID <code>{escape(numero_reg)}</code> na FMS...", 
+            parse_mode="HTML"
+        )
+
+    # ------------------------------------------------------------------
+    # 3. LÓGICA DE CONSULTA UNIFICADA (Executa para ambos os casos)
+    # ------------------------------------------------------------------
+    try:
+        # AQUI: Coloque a sua chamada de busca/raspagem da FMS usando o 'numero_reg'
+        # Exemplo hipotético:
+        # resultado = await consultar_fms_por_id(numero_reg)
+        
+        # Envia o resultado final na tela
+        mensagem_resultado = f"✅ Consulta concluída para o ID <b>{escape(numero_reg)}</b>."
+        
+        if query:
+            await query.message.reply_text(mensagem_resultado, parse_mode="HTML")
+        else:
+            await update.message.reply_text(mensagem_resultado, parse_mode="HTML")
+
+    except Exception as e:
+        logging.error(f"Erro ao consultar ID {numero_reg}: {e}")
+        texto_erro = f"⚠️ Ocorreu um erro ao consultar o ID <code>{escape(numero_reg)}</code>."
+        
+        if query:
+            await query.message.reply_text(texto_erro, parse_mode="HTML")
+        else:
+            await update.message.reply_text(texto_erro, parse_mode="HTML")
+
+    # Limpa os dados da conversa e encerra o estado
+    context.user_data.clear()
+    return ConversationHandler.END
 
         texto = update.message.text
         numero_reg = re.sub(r"\D", "", texto)
