@@ -102,6 +102,57 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
 # FUNÇÕES AUXILIARES E FORMATADORES
 # --------------------------------------------------
 
+def _mascarar_nome(nome: str) -> str:
+    """Aplica máscara LGPD no nome do paciente."""
+    if not nome or nome == "N/A":
+        return "N/A"
+    partes = nome.strip().split()
+    if len(partes) <= 2:
+        return nome
+    return f"{partes[0]} *** {partes[-1]}"
+
+
+def _mascarar_sus(sus: str) -> str:
+    """Aplica máscara LGPD no cartão SUS (ex: 704804085680781 -> 7048******0781)."""
+    if not sus or len(sus) < 15:
+        return sus or "N/A"
+    return f"{sus[:4]}******{sus[-4:]}"
+
+
+def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
+    """Formata os dados da regulação retornados do scraper/banco alinhados à LGPD."""
+    status = resultado.get("status", "N/A")
+    posicao = resultado.get("posicao", "N/A")
+    procedimento = resultado.get("procedimento", "N/A")
+    
+    # Busca nome do paciente e cartão SUS priorizando Banco / Scraper
+    paciente_raw = resultado.get("paciente")
+    sus_raw = resultado.get("cartao_sus")
+
+    if reg_db:
+        if not paciente_raw or paciente_raw == "N/A":
+            paciente_raw = reg_db.get("nome_paciente", "N/A")
+        if not sus_raw or sus_raw == "N/A":
+            sus_raw = reg_db.get("cartao_sus") or reg_db.get("numero_sus", "N/A")
+        if (procedimento == "N/A" or not procedimento) and reg_db.get("procedimento"):
+            procedimento = reg_db.get("procedimento")
+
+    # Aplicação das máscaras LGPD
+    paciente_mascarado = _mascarar_nome(str(paciente_raw))
+    sus_mascarado = _mascarar_sus(str(sus_raw))
+
+    msg = (
+        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
+        f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
+        f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
+        f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
+        f"<b>Especialidade/Procedimento:</b> {escape(str(procedimento))}\n"
+        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
+        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
+    )
+    return msg
+
+
 def _extrair_id_e_nome(reg: dict):
     """Extrai o número da regulação (numero_reg) e o nome do paciente."""
     num_id = (
@@ -123,39 +174,16 @@ def _extrair_id_e_nome(reg: dict):
     return str(num_id), str(nome)
 
 
-def _buscar_regulacao_por_id_reg(numero_reg: str):
-    """Busca os dados locais no banco de dados com base no número da regulação (Síncrono)."""
-    try:
-        return obter_regulacao_por_numero(numero_reg)
-    except Exception as e:
-        logger.error(f"Erro ao buscar regulação no banco: {e}")
-        return None
+async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Verifica se o texto do usuário corresponde a uma ação do menu principal."""
+    texto = update.message.text if update.message else None
+    if not texto:
+        return False
 
-
-def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Formata os dados da regulação retornados do scraper/banco em HTML para o Telegram."""
-    status = resultado.get("status", "N/A")
-    posicao = resultado.get("posicao", "N/A")
-    paciente = resultado.get("paciente", "N/A")
-    procedimento = resultado.get("procedimento", "N/A")
-    data_solic = resultado.get("data_solicitacao", "N/A")
-
-    if reg_db:
-        if (paciente == "N/A" or not paciente) and reg_db.get("nome_paciente"):
-            paciente = reg_db.get("nome_paciente")
-        if (procedimento == "N/A" or not procedimento) and reg_db.get("procedimento"):
-            procedimento = reg_db.get("procedimento")
-
-    msg = (
-        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
-        f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
-        f"<b>Paciente:</b> {escape(str(paciente))}\n"
-        f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
-        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
-        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
-        f"<b>Data Solicitação:</b> {escape(str(data_solic))}\n"
-    )
-    return msg
+    if texto == "🚫 Cancelar Operação" or texto == "/cancelar":
+        await cancelar_operacao(update, context)
+        return True
+    return False
 
 
 async def configurar_menu_comandos(app):
@@ -170,43 +198,6 @@ async def configurar_menu_comandos(app):
         BotCommand("ajuda", "Exibe as instruções de uso do sistema")
     ]
     await app.bot.set_my_commands(comandos)
-
-
-async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Verifica se o usuário clicou em uma opção do menu principal durante um fluxo de conversa."""
-    if not update.message or not update.message.text:
-        return False
-
-    texto = update.message.text.strip()
-    
-    opcoes_menu = [
-        "📋 Verificar Todas", "🔍 Verificar Específico",
-        "➕ Cadastrar Nova", "✏️ Corrigir ID",
-        "🗑️ Excluir Regulação", "ℹ️ Ajuda",
-        "/start", "/verificar", "/consultar", "/cadastrar", "/corrigir", "/excluir", "/ajuda"
-    ]
-
-    if texto in opcoes_menu:
-        await update.message.reply_text("🔄 Cancelando operação anterior...", reply_markup=TECLADO_MENU)
-        context.user_data.clear()
-        
-        if texto in ["📋 Verificar Todas", "/verificar"]:
-            await comando_verificar_todas(update, context)
-        elif texto in ["🔍 Verificar Específico", "/consultar"]:
-            await iniciar_verificar_especifico(update, context)
-        elif texto in ["➕ Cadastrar Nova", "/cadastrar"]:
-            await iniciar_cadastro_manual(update, context)
-        elif texto in ["✏️ Corrigir ID", "/corrigir"]:
-            await iniciar_corrigir(update, context)
-        elif texto in ["🗑️ Excluir Regulação", "/excluir"]:
-            await iniciar_excluir(update, context)
-        elif texto in ["ℹ️ Ajuda", "/ajuda"]:
-            await comando_ajuda(update, context)
-        elif texto == "/start":
-            await start(update, context)
-            
-        return True
-    return False
 
 # --------------------------------------------------
 # HANDLERS BASE E COMANDOS DIRETO
@@ -254,7 +245,7 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Verifica todas as regulações cadastradas pelo usuário com isolamento de erros."""
     user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
+    regulacoes = await buscar_regulacoes_por_usuario(user_id) if callable(buscar_regulacoes_por_usuario) else []
 
     if not regulacoes:
         await update.message.reply_text(
@@ -296,34 +287,6 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         pass
 
     await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
-
-
-async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Exibe a lista de regulações cadastradas em botões para o usuário escolher ou digitar."""
-    user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
-
-    if not regulacoes:
-        await update.message.reply_text(
-            "ℹ️ Você não possui nenhuma regulação cadastrada.\n"
-            "Digite o número do ID da regulação que deseja consultar:",
-            reply_markup=TECLADO_CANCELAR
-        )
-        return CONSULTAR_ID
-
-    teclado = []
-    for reg in regulacoes:
-        num, nome = _extrair_id_e_nome(reg)
-        teclado.append([InlineKeyboardButton(f"📄 Regulação: {num} - {nome}", callback_data=f"ver_esp_{num}")])
-    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
-
-    await update.message.reply_text(
-        "🔍 <b>Selecione uma regulação abaixo ou digite o número da regulação desejada:</b>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(teclado)
-    )
-    return CONSULTAR_ID
-
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a consulta de um número de regulação selecionado via botão Inline ou digitado."""
@@ -367,7 +330,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
     # 3. Execução da busca no Banco e na FMS
     try:
-        reg_db = _buscar_regulacao_por_id_reg(numero_reg)
+        reg_db = await obter_regulacao_por_numero(numero_reg) if "obter_regulacao_por_numero" in globals() else None
         resultado = await consultar_status_fms(numero_reg)
     except Exception as e:
         logger.error(f"Erro no processamento da regulação {numero_reg}: {e}")
@@ -528,8 +491,9 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "procedimento": dados.get("procedimento")
     }
 
-    sucesso = await salvar_regulacao(dados_salvar)
-    await registrar_consentimento_lgpd(user_id, aceito=True)
+    sucesso = await salvar_regulacao(dados_salvar) if callable(salvar_regulacao) else False
+    if callable(registrar_consentimento_lgpd):
+        await registrar_consentimento_lgpd(user_id, aceito=True)
 
     if sucesso:
         await query.edit_message_text("✅ <b>Regulação cadastrada com sucesso!</b>\nEla será monitorada automaticamente pelo sistema.", parse_mode="HTML")
@@ -546,7 +510,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
+    regulacoes = await buscar_regulacoes_por_usuario(user_id) if callable(buscar_regulacoes_por_usuario) else []
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui regulações cadastradas para corrigir.", reply_markup=TECLADO_MENU)
@@ -607,7 +571,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     reg_id = context.user_data.get("corr_reg_id")
     campo = context.user_data.get("corr_campo")
 
-    sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
+    sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor) if callable(atualizar_campo_regulacao) else False
 
     if sucesso:
         await update.message.reply_text("✅ Campo atualizado com sucesso!", reply_markup=TECLADO_MENU)
@@ -626,7 +590,7 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
+    regulacoes = await buscar_regulacoes_por_usuario(user_id) if callable(buscar_regulacoes_por_usuario) else []
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui nenhuma regulação cadastrada para excluir.", reply_markup=TECLADO_MENU)
@@ -668,7 +632,7 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
 
     if query.data == "conf_excl_sim":
         reg_id = context.user_data.get("excl_reg_id")
-        sucesso = await excluir_regulacao_db(reg_id)
+        sucesso = await excluir_regulacao_db(reg_id) if callable(excluir_regulacao_db) else False
 
         if sucesso:
             await query.edit_message_text("✅ Regulação excluída com sucesso!")
@@ -700,11 +664,11 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
 
         resultado = await consultar_status_fms(num_reg)
 
-        if resultado and resultado.get("sucesso"):
+        if resultado.get("sucesso"):
             novo_status = resultado.get("status")
             if novo_status and novo_status != status_antigo:
                 reg_db_id = reg.get("id") or reg.get("id_regulacao")
-                if reg_db_id:
+                if reg_db_id and callable(atualizar_campo_regulacao):
                     await atualizar_campo_regulacao(reg_db_id, "status_atual", novo_status)
                 
                 msg_notificacao = (
