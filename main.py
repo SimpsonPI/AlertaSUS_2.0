@@ -12,16 +12,18 @@ from telegram.ext import (
 from config import TELEGRAM_BOT_TOKEN
 
 # --------------------------------------------------
-# IMPORTAÇÃO DO HANDLER UNIFICADO
+# IMPORTAÇÕES MODULARIZADAS - CORRETO
 # --------------------------------------------------
-from handler import (
-    # Constantes de Estado
-    CONSULTAR_ID,
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
-    SELECIONAR_REGULACAO_EXCLUIR,
-    CONFIRMAR_EXCLUSAO,
+
+from handlers_base import (
+    start,
+    comando_ajuda,
+    cancelar_operacao,
+    configurar_menu_comandos,
+    executar_varredura_automatica
+)
+
+from handlers_cadastro import (
     ETAPA_SUS,
     ETAPA_NOME,
     ETAPA_CELULAR,
@@ -30,14 +32,6 @@ from handler import (
     ETAPA_CBO,
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD,
-    
-    # Comandos e Handlers Base
-    start,
-    comando_ajuda,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    
-    # Fluxo de Cadastro
     iniciar_cadastro_manual,
     receber_sus,
     receber_nome,
@@ -46,26 +40,39 @@ from handler import (
     receber_regulacao,
     receber_cbo,
     receber_procedimento,
-    finalizar_cadastro,
-    
-    # Fluxo de Consulta
+    finalizar_cadastro
+)
+
+from handlers_consulta import (
     comando_verificar_todas,
     iniciar_verificar_especifico,
-    processar_verificar_especifico,
-    
-    # Fluxo de Correção
+    processar_verificar_especifico
+)
+
+from handlers_utils import CONSULTAR_ID
+
+# Handlers de Correção
+from handlers_correcao import (
+    SELECIONAR_REGULACAO,
+    SELECIONAR_CAMPO,
+    AGUARDAR_NOVO_VALOR,
     iniciar_corrigir,
     selecionar_regulacao_callback,
     selecionar_campo_callback,
     salvar_novo_valor,
-    cancelar_corrigir,
-    
-    # Fluxo de Exclusão
+    cancelar_corrigir
+)
+
+# Handlers de Exclusão
+from handlers_exclusao import (
+    SELECIONAR_REGULACAO_EXCLUIR,
+    CONFIRMAR_EXCLUSAO,
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
     confirmar_exclusao_callback,
     cancelar_excluir
 )
+
 
 # Configuração de Logs
 logging.basicConfig(
@@ -190,9 +197,8 @@ def main():
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
     app.add_handler(CommandHandler("verificar", comando_verificar_todas))
 
-    app.add_handler(MessageHandler(filters.Regex("(?i).*Verificar Todas.*"), comando_verificar_todas))
-    app.add_handler(MessageHandler(filters.Regex("(?i).*Verificar Específico.*"), iniciar_verificar_especifico))
-    app.add_handler(MessageHandler(filters.Regex("(?i).*Ajuda.*"), comando_ajuda))
+    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
+    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
 
     # Configura o menu de comandos azul do Telegram ao iniciar
     app.post_init = configurar_menu_comandos
