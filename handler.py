@@ -180,7 +180,7 @@ async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # --------------------------------------------------
 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verifica todas as regulações cadastradas pelo usuário."""
+    """Verifica todas as regulações cadastradas pelo usuário com isolamento de erros."""
     user_id = update.effective_user.id
     regulacoes = buscar_regulacoes_por_usuario(user_id)
 
@@ -200,52 +200,33 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
 
     for reg in regulacoes:
         num_reg, _ = _extrair_id_e_nome(reg)
-        resultado = await consultar_status_fms(num_reg)
-        
-        if resultado.get("sucesso"):
-            msg_html = _montar_msg_html(num_reg, resultado, reg)
-            await update.message.reply_text(msg_html, parse_mode="HTML")
-        else:
-            msg_erro = resultado.get("mensagem") or "Erro ao consultar FMS."
+        try:
+            resultado = await consultar_status_fms(num_reg)
+            if resultado and resultado.get("sucesso"):
+                msg_html = _montar_msg_html(num_reg, resultado, reg)
+                await update.message.reply_text(msg_html, parse_mode="HTML")
+            else:
+                msg_erro = resultado.get("mensagem") if resultado else "Sem resposta do portal FMS."
+                await update.message.reply_text(
+                    f"⚠️ <b>Regulação {escape(str(num_reg))}:</b> {escape(str(msg_erro))}",
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao consultar regulação {num_reg}: {e}")
             await update.message.reply_text(
-                f"⚠️ <b>ID {num_reg}:</b> {escape(msg_erro)}",
+                f"❌ <b>Regulação {escape(str(num_reg))}:</b> Falha temporária ao consultar na FMS.",
                 parse_mode="HTML"
             )
 
-    await msg_inicial.delete()
+    try:
+        await msg_inicial.delete()
+    except Exception:
+        pass
+
     await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
 
-async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Inicia a consulta de uma regulação específica apresentando botões inline."""
-    user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
-
-    if not regulacoes:
-        await update.message.reply_text(
-            "⚠️ <b>Você não possui nenhuma regulação cadastrada.</b>\n\n"
-            "Utilize a opção <b>➕ Cadastrar Nova</b> no menu principal.",
-            parse_mode="HTML",
-            reply_markup=TECLADO_MENU
-        )
-        return ConversationHandler.END
-
-    teclado_inline = []
-    for r in regulacoes:
-        num, nome = _extrair_id_e_nome(r)
-        # Trocado 'ID:' por 'Regulação:' no botão
-        teclado_inline.append([InlineKeyboardButton(f"📄 Regulação: {num} - {nome}", callback_data=f"ver_esp_{num}")])
-
-    teclado_inline.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
-
-    await update.message.reply_text(
-        "🔎 <b>Selecione uma regulação abaixo ou digite o número da regulação desejada:</b>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(teclado_inline)
-    )
-    return CONSULTAR_ID
-
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Processa o número da regulação escolhido via botão Inline ou digitado manualmente."""
+    """Processa a consulta de um número de regulação selecionado via botão Inline ou digitado."""
     query = update.callback_query
 
     # 1. Entrada via Botão Inline
@@ -268,6 +249,54 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
     else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
+
+        texto = update.message.text.strip()
+        numero_reg = re.sub(r"\D", "", texto)
+
+        if not numero_reg:
+            await update.message.reply_text(
+                "⚠️ Por favor, digite apenas os números da regulação:", 
+                reply_markup=TECLADO_CANCELAR
+            )
+            return CONSULTAR_ID
+
+        msg_espera = await update.message.reply_text(
+            f"🔎 Pesquisando Regulação <code>{escape(numero_reg)}</code>...", 
+            parse_mode="HTML"
+        )
+
+    # 3. Execução da busca no Banco e na FMS
+    try:
+        reg_db = _buscar_regulacao_por_id_reg(numero_reg)
+        resultado = await consultar_status_fms(numero_reg)
+    except Exception as e:
+        logger.error(f"Erro no processamento da regulação {numero_reg}: {e}")
+        resultado = {"sucesso": False, "mensagem": "Ocorreu uma falha ao conectar com o portal da FMS."}
+        reg_db = None
+
+    if query:
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await query.edit_message_text(msg_html, parse_mode="HTML")
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await query.edit_message_text(f"❌ {escape(msg_erro)}", parse_mode="HTML")
+        await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+    else:
+        try:
+            await msg_espera.delete()
+        except Exception:
+            pass
+
+        if resultado.get("sucesso"):
+            msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+            await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
+        else:
+            msg_erro = resultado.get("mensagem") or "Regulação não encontrada na FMS."
+            await update.message.reply_text(f"❌ {escape(msg_erro)}", parse_mode="HTML", reply_markup=TECLADO_MENU)
+
+    context.user_data.clear()
+    return ConversationHandler.END
 
         texto = update.message.text.strip()
         numero_reg = re.sub(r"\D", "", texto)
