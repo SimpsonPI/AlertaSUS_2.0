@@ -15,10 +15,12 @@ from telegram.ext import (
     ConversationHandler
 )
 
-from config import (
-    LOG_LEVEL,
-    VARREDURA_INTERVALO_MINUTOS
-)
+# Tenta importar do config, com fallback para padrão se não existir
+try:
+    from config import VARREDURA_INTERVALO_MINUTOS
+except ImportError:
+    VARREDURA_INTERVALO_MINUTOS = 30
+
 from database import (
     buscar_regulacoes_por_usuario,
     buscar_todas_regulacoes_ativas,
@@ -30,6 +32,13 @@ from database import (
     registrar_consentimento_lgpd
 )
 from scraper import consultar_status_fms
+
+# Configuração de Logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Configuração de Logging
 logging.basicConfig(
