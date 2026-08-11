@@ -144,7 +144,6 @@ def tratar_status_fms(status_fms: str) -> str:
     
     status_clean = str(status_fms).strip().upper()
     
-    # Termos a serem substituídos por PENDENTE
     termos_invalidos = [
         "", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO", 
         "INFORMADA NO PORTAL", "NÃO INFORMADA NO PORTAL", "INDEFINIDO"
@@ -250,6 +249,12 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         "Não informada"
     )
 
+    cbo = (
+        _obter_valor(resultado, "cbo") or 
+        _obter_valor(reg_db, "cbo") or 
+        "N/A"
+    )
+
     procedimento = (
         _obter_valor(resultado, "procedimento") or 
         _obter_valor(reg_db, "procedimento") or 
@@ -276,6 +281,7 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
         f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
         f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
+        f"<b>CBO:</b> {escape(str(cbo))}\n"
         f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
         f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
         f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
@@ -427,7 +433,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa a seleção do ID e executa a consulta na FMS imediatamente."""
+    """Processa a seleção do ID por clique ou texto e executa a consulta imediatamente."""
     try:
         query = update.callback_query
         num_reg = None
@@ -460,8 +466,9 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             return CONSULTAR_ID
 
         msg_espera_text = f"⌛ <b>Consultando a regulação</b> <code>{escape(num_reg)}</code> na FMS..."
+        
         if query:
-            msg_status = await query.message.reply_text(msg_espera_text, parse_mode="HTML")
+            await query.edit_message_text(msg_espera_text, parse_mode="HTML")
         else:
             msg_status = await update.message.reply_text(msg_espera_text, parse_mode="HTML")
 
@@ -474,14 +481,13 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
         msg_html = _montar_msg_html(num_reg, resultado, reg_db)
 
-        try:
-            await msg_status.delete()
-        except Exception:
-            pass
-
         if query:
             await query.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
         else:
+            try:
+                await msg_status.delete()
+            except Exception:
+                pass
             await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
 
         context.user_data.clear()
@@ -644,7 +650,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 # --------------------------------------------------
-# FLUXO DE CORREÇÃO (AJUSTADO E CORRIGIDO)
+# FLUXO DE CORREÇÃO
 # --------------------------------------------------
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -683,8 +689,8 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton("Cartão SUS", callback_data="corr_campo_numero_sus"), InlineKeyboardButton("Nome", callback_data="corr_campo_nome_paciente")],
         [InlineKeyboardButton("Celular", callback_data="corr_campo_celular"), InlineKeyboardButton("Nascimento", callback_data="corr_campo_data_nascimento")],
-        [InlineKeyboardButton("Nº Regulação", callback_data="corr_campo_numero_reg"), InlineKeyboardButton("Procedimento", callback_data="corr_campo_procedimento")],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")]
+        [InlineKeyboardButton("Nº Regulação", callback_data="corr_campo_numero_reg"), InlineKeyboardButton("CBO", callback_data="corr_campo_cbo")],
+        [InlineKeyboardButton("Procedimento", callback_data="corr_campo_procedimento"), InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")]
     ])
 
     await query.edit_message_text("Selecione qual campo você deseja alterar:", reply_markup=teclado)
@@ -716,7 +722,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     campo = context.user_data.get("corr_campo")
 
     if not reg_id or not campo:
-        await update.message.reply_text("⚠️ Sessão inspirada ou dados inválidos. Tente o processo novamente.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text("⚠️ Sessão expirada ou dados inválidos. Tente o processo novamente.", reply_markup=TECLADO_MENU)
         context.user_data.clear()
         return ConversationHandler.END
 
