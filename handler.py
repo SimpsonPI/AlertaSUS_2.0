@@ -199,6 +199,95 @@ def _mascarar_dado_sensivel(valor, exibir_ultimos: int = 4) -> str:
     return "*" * (len(texto) - exibir_ultimos) + texto[-exibir_ultimos:]
 
 
+def _mascarar_nome(nome) -> str:
+    """
+    Mascara o nome do paciente para exibição, seguindo a LGPD:
+    mantém apenas a primeira letra de cada parte do nome.
+    Ex: 'RIVIA SIMPSON PEREIRA OLIVEIRA' -> 'R***** S******* P******* O*******'
+    """
+    if not nome:
+        return "N/A"
+    partes = str(nome).strip().split()
+    mascarado = []
+    for parte in partes:
+        if len(parte) <= 1:
+            mascarado.append(parte)
+        else:
+            mascarado.append(parte[0] + "*" * (len(parte) - 1))
+    return " ".join(mascarado)
+
+
+def _parsear_status_fms(status_bruto) -> dict:
+    """
+    Quebra a string bruta de status retornada pela consulta ao FMS
+    (formato 'chave: valor | chave: valor | ...') em um dicionário,
+    permitindo exibir cada informação em sua própria linha, sem
+    repetição e de forma organizada.
+    """
+    campos = {}
+    if not status_bruto:
+        return campos
+
+    partes = [p.strip() for p in str(status_bruto).split("|") if p.strip()]
+    for parte in partes:
+        if ":" in parte:
+            chave, valor = parte.split(":", 1)
+            campos.setdefault(chave.strip().lower(), valor.strip())
+        else:
+            m = re.match(r"(?i)^situa[cç][aã]o\s+(.+)$", parte)
+            campos.setdefault("situação", m.group(1).strip() if m else parte)
+
+    return campos
+
+
+def _formatar_bloco_regulacao(numero, nome, cartao_sus, cbo, procedimento, status_bruto, especialidade=None) -> str:
+    """
+    Monta um bloco de texto único e organizado para uma regulação,
+    evitando repetição de informação (ex: Fila x Posição de Fila) e
+    exibindo apenas os campos que realmente foram encontrados.
+    """
+    partes = _parsear_status_fms(status_bruto)
+
+    situacao = partes.get("situação") or "Não informado"
+    posicao_fila = partes.get("posição de fila") or partes.get("posicao de fila") or "Não informado"
+    previsao = partes.get("previsão de atendimento") or partes.get("previsao de atendimento")
+    data_consulta = partes.get("data e hora da consulta marcada")
+    autorizacao = partes.get("autorização de agendamento") or partes.get("autorizacao de agendamento")
+    estabelecimento = partes.get("estabelecimento executante da consulta")
+    endereco = partes.get("endereço de estabelecimento") or partes.get("endereco de estabelecimento")
+    telefone = partes.get("telefone para contato")
+    alerta = partes.get("alerta")
+    especialidade_final = especialidade or partes.get("especialidade") or "Não informado"
+
+    linhas = [
+        f"🔹 <b>REGULAÇÃO {numero}</b>",
+        f"👤 Paciente: {_mascarar_nome(nome)}",
+        f"🆔 Cartão SUS: {_mascarar_dado_sensivel(cartao_sus)}",
+        f"🩺 CBO: {cbo or 'Não informado'}",
+        f"📋 Procedimento: {procedimento or 'Não informado'}",
+        f"🏥 Especialidade: {especialidade_final}",
+        f"📊 Situação: {situacao}",
+        f"📍 Posição da Fila: {posicao_fila}",
+    ]
+
+    if previsao:
+        linhas.append(f"⏳ Previsão de atendimento: {previsao}")
+    if data_consulta:
+        linhas.append(f"📅 Data/hora da consulta: {data_consulta}")
+    if estabelecimento:
+        linhas.append(f"🏥 Estabelecimento: {estabelecimento}")
+    if endereco:
+        linhas.append(f"📍 Endereço: {endereco}")
+    if telefone:
+        linhas.append(f"☎️ Telefone: {telefone}")
+    if autorizacao:
+        linhas.append(f"🔖 Autorização de agendamento: {autorizacao}")
+    if alerta:
+        linhas.append(f"⚠️ Alerta: {alerta}")
+
+    return "\n".join(linhas)
+
+
 async def configurar_menu_comandos(app):
     """Configura o menu de comandos do Telegram (botão azul)."""
     comandos = [
@@ -295,21 +384,26 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         await msg_inicial.edit_text("❌ Erro ao consultar as regulações. Tente novamente mais tarde.")
         return
 
-    # Monta mensagem com todos os resultados
-    msg_resposta = "📋 <b>STATUS DE TODAS AS SUAS REGULAÇÕES:</b>\n\n"
-    
+    # Monta mensagem com todos os resultados, um bloco organizado por regulação
+    blocos = []
     for item in resultados:
         campos = item["campos"]
         resultado = item["resultado"]
-        
-        msg_resposta += (
-            f"<b>Regulação: {item['numero']}</b>\n"
-            f"👤 Paciente: {item['nome']}\n"
-            f"🆔 Cartão SUS: {_mascarar_dado_sensivel(campos['cartao_sus'])}\n"
-            f"📊 Status: {campos['status_atual'] or resultado.get('status', 'N/A')}\n"
-            f"📍 Fila: {campos['posicao_fila'] or resultado.get('posicao_fila', 'N/A')}\n"
-            f"🏥 Especialidade: {campos['especialidade'] or resultado.get('especialidade_procedimento', 'N/A')}\n\n"
+
+        blocos.append(
+            _formatar_bloco_regulacao(
+                numero=item["numero"],
+                nome=item["nome"],
+                cartao_sus=campos.get("cartao_sus"),
+                cbo=campos.get("cbo"),
+                procedimento=campos.get("procedimento"),
+                status_bruto=campos.get("status_atual") or resultado.get("status"),
+                especialidade=resultado.get("especialidade_procedimento") or campos.get("especialidade"),
+            )
         )
+
+    separador = "\n➖➖➖➖➖➖➖➖➖➖\n"
+    msg_resposta = "📋 <b>STATUS DE TODAS AS SUAS REGULAÇÕES</b>\n\n" + separador.join(blocos)
 
     await msg_inicial.edit_text(msg_resposta, parse_mode="HTML")
     await update.message.reply_text("Escolha uma opção:", reply_markup=TECLADO_MENU)
@@ -344,50 +438,53 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Processa a verificação específica de uma regulação."""
     query = update.callback_query
-    user_id = update.effective_user.id
 
     if query:
         await query.answer()
         if query.data == "cancelar_ver_esp":
             await query.edit_message_text("❌ Consulta cancelada.")
-            await query.message.reply_text("Menu:", reply_markup=TECLADO_MENU)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Menu:", reply_markup=TECLADO_MENU)
             return ConversationHandler.END
 
         num_regulacao = query.data.replace("ver_esp_", "")
+        msg_aguarde = query.message
+        await msg_aguarde.edit_text("⏳ Aguardando consulta, por favor aguarde...")
     else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
         num_regulacao = update.message.text.strip()
+        msg_aguarde = await update.message.reply_text("⏳ Aguardando consulta, por favor aguarde...")
 
     try:
         resultado = await consultar_status_fms(num_regulacao)
-        
+
+        reg_db = None
+        try:
+            reg_db = obter_regulacao_por_numero(num_regulacao)
+        except Exception as e:
+            logger.error(f"Erro ao buscar regulação no banco: {e}")
+        campos_db = _extrair_campos_completos(reg_db) if reg_db else {}
+
         if resultado.get("sucesso"):
-            msg = (
-                f"<b>STATUS DA REGULAÇÃO</b>\n"
-                f"ID Regulação: {num_regulacao}\n"
-                f"Cartão SUS: {_mascarar_dado_sensivel(resultado.get('cartao_sus'))}\n"
-                f"Paciente: {resultado.get('nome_paciente', 'N/A')}\n"
-                f"Especialidade/Procedimento: {resultado.get('especialidade_procedimento', 'N/A')}\n"
-                f"Status: {resultado.get('status', 'N/A')}\n"
-                f"Posição na Fila: {resultado.get('posicao_fila', 'N/A')}\n"
+            msg = _formatar_bloco_regulacao(
+                numero=num_regulacao,
+                nome=resultado.get("nome_paciente") or campos_db.get("nome_paciente"),
+                cartao_sus=resultado.get("cartao_sus") or campos_db.get("cartao_sus"),
+                cbo=campos_db.get("cbo"),
+                procedimento=campos_db.get("procedimento"),
+                status_bruto=resultado.get("status") or campos_db.get("status_atual"),
+                especialidade=resultado.get("especialidade_procedimento"),
             )
         else:
             msg = f"❌ Regulação {num_regulacao} não encontrada no sistema FMS."
 
-        if query:
-            await query.edit_message_text(msg, parse_mode="HTML")
-        else:
-            await update.message.reply_text(msg, parse_mode="HTML")
+        await msg_aguarde.edit_text(msg, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Erro ao consultar regulação específica: {e}")
-        if query:
-            await query.edit_message_text("❌ Erro ao consultar. Tente novamente.")
-        else:
-            await update.message.reply_text("❌ Erro ao consultar. Tente novamente.")
+        await msg_aguarde.edit_text("❌ Erro ao consultar. Tente novamente.")
 
-    await update.message.reply_text("Escolha uma opção:", reply_markup=TECLADO_MENU)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="Escolha uma opção:", reply_markup=TECLADO_MENU)
     context.user_data.clear()
     return ConversationHandler.END
 
