@@ -124,10 +124,10 @@ conv_cadastro = ConversationHandler(
     per_message=False
 )
 
-# 2. Verificar Específico (Suporte a seleção por Botões Inline e digitação manual)
+# 2. Verificar Específico (Com tratamento flexível de acentuação no Regex)
 conv_verificar_especifico = ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
+        MessageHandler(filters.Regex("(?i).*Verificar Espec[íi]fico.*"), iniciar_verificar_especifico),
         CommandHandler("consultar", iniciar_verificar_especifico)
     ],
     states={

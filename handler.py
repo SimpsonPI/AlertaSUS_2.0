@@ -358,61 +358,73 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
 
 
+# Verifique se estes imports estão no topo do handler.py:
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes, ConversationHandler
+
+# 1. Função Utilitária de Mascaramento
+def mascarar_nome(nome: str) -> str:
+    """Mascara o nome do paciente exibindo apenas o primeiro nome e a inicial do último sobrenome."""
+    if not nome or str(nome).strip().upper() in ["N/A", "NONE", ""]:
+        return "N/A"
+    
+    partes = str(nome).strip().split()
+    if len(partes) == 1:
+        return f"{partes[0]}***"
+    
+    primeiro_nome = partes[0]
+    inicial_sobrenome = partes[-1][0].upper()
+    return f"{primeiro_nome} {inicial_sobrenome}***"
+
+
+# 2. Função de Inicialização da Verificação Específica (COM TRATAMENTO DE ERROS)
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inicia a consulta específica exibindo os botões inline com nomes mascarados."""
-    user_id = update.effective_user.id
-    
-    # Busca as regulações cadastradas para o usuário
-    regulacoes = buscar_regulacoes_por_chat_id(user_id)
-
-    if not regulacoes:
-        msg_sem_dados = "⚠️ Nenhuma regulação cadastrada encontrada."
-        if update.message:
-            await update.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
-        elif update.callback_query:
-            await update.callback_query.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
-        return ConversationHandler.END
-
-    teclado_botoes = []
-    for reg in regulacoes:
-        num_reg = reg.get("numero_reg") or reg.get("id") or "N/A"
-        nome_bruto = reg.get("nome_paciente") or reg.get("paciente") or reg.get("nome") or ""
+    try:
+        user_id = update.effective_user.id
         
-        # Aplica o mascaramento no nome que aparecerá no botão
-        nome_exibicao = mascarar_nome(nome_bruto)
-        
-        texto_botao = f"📄 {num_reg} - {nome_exibicao}"
-        teclado_botoes.append([InlineKeyboardButton(texto_botao, callback_data=f"ver_esp_{num_reg}")])
+        # Busca no Supabase
+        regulacoes = buscar_regulacoes_por_chat_id(user_id)
 
-    teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
-    reply_markup = InlineKeyboardMarkup(teclado_botoes)
-
-    msg = (
-        "🔍 **Selecione qual regulação deseja verificar:**\n"
-        "_Ou se preferir, digite o número do ID da regulação abaixo:_"
-    )
-
-    if update.message:
-        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
-
-    return CONSULTAR_ID
-
-
-async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Processa a consulta individual cruzando dados do Supabase e da FMS."""
-    query = update.callback_query
-
-    # 1. Clique em botão inline
-    if query:
-        await query.answer()
-
-        if query.data == "cancelar_ver_esp":
-            await query.edit_message_text("❌ Operação de consulta cancelada.")
-            await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
-            context.user_data.clear()
+        if not regulacoes:
+            msg_sem_dados = "⚠️ Nenhuma regulação cadastrada encontrada para o seu usuário."
+            if update.message:
+                await update.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
+            elif update.callback_query:
+                await update.callback_query.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
             return ConversationHandler.END
+
+        teclado_botoes = []
+        for reg in regulacoes:
+            num_reg = reg.get("numero_reg") or reg.get("id") or "N/A"
+            nome_bruto = reg.get("nome_paciente") or reg.get("paciente") or reg.get("nome") or ""
+            
+            # Aplica a máscara no nome
+            nome_exibicao = mascarar_nome(nome_bruto)
+            
+            texto_botao = f"📄 {num_reg} - {nome_exibicao}"
+            teclado_botoes.append([InlineKeyboardButton(texto_botao, callback_data=f"ver_esp_{num_reg}")])
+
+        teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
+        reply_markup = InlineKeyboardMarkup(teclado_botoes)
+
+        msg = (
+            "🔍 *Selecione qual regulação deseja verificar:*\n"
+            "_Ou se preferir, digite o número do ID da regulação abaixo:_"
+        )
+
+        if update.message:
+            await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
+
+        return CONSULTAR_ID
+
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO EM iniciar_verificar_especifico: {e}", flush=True)
+        if update.message:
+            await update.message.reply_text("⚠️ Ocorreu um erro ao carregar suas regulações. Tente novamente em instantes.")
+        return ConversationHandler.END
 
         numero_reg = query.data.replace("ver_esp_", "")
         msg_espera = await query.message.reply_text(
