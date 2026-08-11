@@ -680,8 +680,10 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
         db_id = r.get("id") or r.get("id_regulacao") or num
-        teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{db_id}")])
-    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
+
+# ✅ Como deve ficar:
+teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{num}")])
+teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
     await update.message.reply_text("✏️ <b>Selecione qual regulação deseja corrigir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
     return SELECIONAR_REGULACAO
@@ -829,9 +831,11 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     teclado = []
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
-        db_id = r.get("id") or r.get("id_regulacao") or num
-        teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{db_id}")])
-    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
+        db_id = r.get("id") or r.get("id_regulacao") or num        
+
+# ✅ Como deve ficar:
+teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{num}")])
+teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
 
     await update.message.reply_text("🗑️ <b>Selecione qual regulação deseja excluir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
     return SELECIONAR_REGULACAO_EXCLUIR
