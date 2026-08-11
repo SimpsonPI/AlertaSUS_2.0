@@ -98,194 +98,106 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Textos dos botões do menu principal + botão de cancelar.
-# Usados para detectar quando o usuário aperta um botão do menu
-# enquanto está no meio de um formulário (ex: cadastro, correção).
-BOTOES_MENU = {
-    "📋 Verificar Todas",
-    "🔍 Verificar Específico",
-    "➕ Cadastrar Nova",
-    "✏️ Corrigir ID",
-    "🗑️ Excluir Regulação",
-    "ℹ️ Ajuda",
-    "🚫 Cancelar Operação",
-}
-
 # --------------------------------------------------
 # FUNÇÕES AUXILIARES E FORMATADORES
 # --------------------------------------------------
 
+def _obter_valor(fonte, *chaves):
+    """Extrai o primeiro valor válido de um dicionário ou objeto."""
+    if not fonte:
+        return None
+    for chave in chaves:
+        val = getattr(fonte, chave, None) if not isinstance(fonte, dict) else fonte.get(chave)
+        if val is not None and str(val).strip() not in ("", "None", "N/A"):
+            return str(val).strip()
+    return None
+
+
+def _mascarar_nome(nome: str) -> str:
+    if not nome or nome in ("N/A", "None"):
+        return "N/A"
+    partes = nome.split()
+    if len(partes) <= 1:
+        return nome[0] + "***" if nome else "N/A"
+    return f"{partes[0]} {partes[-1][0]}***"
+
+
+def _mascarar_sus(sus: str) -> str:
+    if not sus or len(sus) < 15:
+        return sus or "N/A"
+    return f"{sus[:3]}****{sus[-4:]}"
+
+
+async def _buscar_regulacao_por_id_reg(numero_reg: str):
+    """Busca os dados da regulação no banco de dados local tratando chamadas síncronas/assíncronas."""
+    try:
+        res = obter_regulacao_por_numero(numero_reg)
+        if hasattr(res, "__await__"):
+            return await res
+        return res
+    except Exception:
+        return None
+
+
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """
-    Verifica se o texto recebido é um dos botões do menu principal
-    (ou o botão de cancelar), em vez de uma resposta válida do formulário.
+    """Verifica se o usuário clicou em uma opção do menu durante um fluxo de conversação."""
+    if not update.message or not update.message.text:
+        return False
+    texto = update.message.text.strip()
+    opcoes_menu = [
+        "📋 Verificar Todas", "🔍 Verificar Específico", 
+        "➕ Cadastrar Nova", "✏️ Corrigir ID", 
+        "🗑️ Excluir Regulação", "ℹ️ Ajuda", "🚫 Cancelar Operação"
+    ]
+    return texto in opcoes_menu
 
-    Isto evita o bug em que, ao apertar um botão do menu no meio de uma
-    conversa (ex: cadastro), o texto do botão era tratado como resposta
-    inválida do campo atual, gerando um loop de erro sem saída.
-
-    Se o texto corresponder a um botão do menu: cancela a operação atual
-    e mostra o menu principal novamente, retornando True.
-    Caso contrário, retorna False e o fluxo normal do formulário continua.
-    """
-    texto = update.message.text.strip() if update.message and update.message.text else ""
-
-    if texto in BOTOES_MENU:
-        await cancelar_operacao(update, context)
-        return True
-
-    return False
 
 def _extrair_id_e_nome(reg: dict):
-    """
-    Extrai o número da regulação e o nome do paciente.
-    ALINHADO COM COLUNAS DO SUPABASE:
-    - numero_regulacao (ID da regulação)
-    - nome_paciente (Nome do paciente)
-    """
-    # Tenta múltiplos nomes de coluna para o ID/número de regulação
+    """Extrai o número da regulação (numero_reg) e o nome do paciente."""
     num_id = (
-        reg.get("numero_regulacao") or 
         reg.get("numero_reg") or 
-        reg.get("num_regulacao") or 
+        reg.get("num_reg") or 
+        reg.get("numero_regulacao") or 
+        reg.get("numero_solicitacao") or 
         reg.get("id_regulacao") or 
-        reg.get("id") or
-        "N/A"
+        reg.get("id")
     )
-    
-    # Tenta múltiplos nomes de coluna para o nome do paciente
     nome = (
         reg.get("nome_paciente") or 
-        reg.get("nome") or 
         reg.get("paciente") or 
+        reg.get("nome") or 
         "Paciente não informado"
     )
-    
     return str(num_id), str(nome)
 
 
-def _extrair_campos_completos(reg: dict):
-    """
-    Extrai todos os campos de uma regulação com fallbacks.
-    Alinhado com estrutura de colunas do Supabase.
-    """
-    return {
-        "id": reg.get("id") or reg.get("id_regulacao"),
-        "numero_regulacao": reg.get("numero_regulacao") or reg.get("numero_reg"),
-        "cartao_sus": reg.get("cartao_sus") or reg.get("numero_sus"),
-        "nome_paciente": reg.get("nome_paciente") or reg.get("nome"),
-        "celular": reg.get("celular") or reg.get("telefone"),
-        "data_nascimento": reg.get("data_nascimento") or reg.get("nascimento"),
-        "cbo": reg.get("cbo"),
-        "procedimento": reg.get("procedimento"),
-        "status_atual": reg.get("status_atual") or reg.get("status") or reg.get("status_anterior"),
-        "especialidade": reg.get("especialidade") or reg.get("especialidade_procedimento"),
-        "posicao_fila": reg.get("posicao_fila") or reg.get("posicao"),
-        "data_regulacao": reg.get("data_regulacao") or reg.get("data_criacao"),
-    }
+def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
+    """Formata os dados da regulação retornados do scraper/banco alinhados à LGPD."""
+    resultado = resultado or {}
 
+    # Define status padrão como PENDENTE caso não haja valor válido
+    status_bruto = _obter_valor(resultado, "status") or _obter_valor(reg_db, "status_atual", "status")
+    status = status_bruto if status_bruto else "PENDENTE"
 
-def _mascarar_dado_sensivel(valor, exibir_ultimos: int = 4) -> str:
-    """
-    Mascara um dado sensível para exibição, seguindo a LGPD:
-    mostra apenas os últimos dígitos e substitui o restante por '*'.
-    Ex: '70900167715818' -> '**********5818'
-    """
-    if not valor:
-        return "N/A"
-    texto = str(valor)
-    if len(texto) <= exibir_ultimos:
-        return "*" * len(texto)
-    return "*" * (len(texto) - exibir_ultimos) + texto[-exibir_ultimos:]
+    posicao = _obter_valor(resultado, "posicao", "posicao_fila") or _obter_valor(reg_db, "posicao", "posicao_fila") or "N/A"
+    procedimento = _obter_valor(resultado, "procedimento") or _obter_valor(reg_db, "procedimento") or "N/A"
 
+    paciente_raw = _obter_valor(resultado, "paciente", "nome_paciente") or _obter_valor(reg_db, "nome_paciente", "paciente", "nome") or "N/A"
+    sus_raw = _obter_valor(resultado, "cartao_sus", "numero_sus") or _obter_valor(reg_db, "cartao_sus", "numero_sus") or "N/A"
 
-def _mascarar_nome(nome) -> str:
-    """
-    Mascara o nome do paciente para exibição, seguindo a LGPD:
-    mantém apenas a primeira letra de cada parte do nome.
-    Ex: 'RIVIA SIMPSON PEREIRA OLIVEIRA' -> 'R***** S******* P******* O*******'
-    """
-    if not nome:
-        return "N/A"
-    partes = str(nome).strip().split()
-    mascarado = []
-    for parte in partes:
-        if len(parte) <= 1:
-            mascarado.append(parte)
-        else:
-            mascarado.append(parte[0] + "*" * (len(parte) - 1))
-    return " ".join(mascarado)
+    paciente_mascarado = _mascarar_nome(paciente_raw)
+    sus_mascarado = _mascarar_sus(sus_raw)
 
-
-def _parsear_status_fms(status_bruto) -> dict:
-    """
-    Quebra a string bruta de status retornada pela consulta ao FMS
-    (formato 'chave: valor | chave: valor | ...') em um dicionário,
-    permitindo exibir cada informação em sua própria linha, sem
-    repetição e de forma organizada.
-    """
-    campos = {}
-    if not status_bruto:
-        return campos
-
-    partes = [p.strip() for p in str(status_bruto).split("|") if p.strip()]
-    for parte in partes:
-        if ":" in parte:
-            chave, valor = parte.split(":", 1)
-            campos.setdefault(chave.strip().lower(), valor.strip())
-        else:
-            m = re.match(r"(?i)^situa[cç][aã]o\s+(.+)$", parte)
-            campos.setdefault("situação", m.group(1).strip() if m else parte)
-
-    return campos
-
-
-def _formatar_bloco_regulacao(numero, nome, cartao_sus, cbo, procedimento, status_bruto, especialidade=None) -> str:
-    """
-    Monta um bloco de texto único e organizado para uma regulação,
-    evitando repetição de informação (ex: Fila x Posição de Fila) e
-    exibindo apenas os campos que realmente foram encontrados.
-    """
-    partes = _parsear_status_fms(status_bruto)
-
-    situacao = partes.get("situação") or "Não informado"
-    posicao_fila = partes.get("posição de fila") or partes.get("posicao de fila") or "Não informado"
-    previsao = partes.get("previsão de atendimento") or partes.get("previsao de atendimento")
-    data_consulta = partes.get("data e hora da consulta marcada")
-    autorizacao = partes.get("autorização de agendamento") or partes.get("autorizacao de agendamento")
-    estabelecimento = partes.get("estabelecimento executante da consulta")
-    endereco = partes.get("endereço de estabelecimento") or partes.get("endereco de estabelecimento")
-    telefone = partes.get("telefone para contato")
-    alerta = partes.get("alerta")
-    especialidade_final = especialidade or partes.get("especialidade") or "Não informado"
-
-    linhas = [
-        f"🔹 <b>REGULAÇÃO {numero}</b>",
-        f"👤 Paciente: {_mascarar_nome(nome)}",
-        f"🆔 Cartão SUS: {_mascarar_dado_sensivel(cartao_sus)}",
-        f"🩺 CBO: {cbo or 'Não informado'}",
-        f"📋 Procedimento: {procedimento or 'Não informado'}",
-        f"🏥 Especialidade: {especialidade_final}",
-        f"📊 Situação: {situacao}",
-        f"📍 Posição da Fila: {posicao_fila}",
-    ]
-
-    if previsao:
-        linhas.append(f"⏳ Previsão de atendimento: {previsao}")
-    if data_consulta:
-        linhas.append(f"📅 Data/hora da consulta: {data_consulta}")
-    if estabelecimento:
-        linhas.append(f"🏥 Estabelecimento: {estabelecimento}")
-    if endereco:
-        linhas.append(f"📍 Endereço: {endereco}")
-    if telefone:
-        linhas.append(f"☎️ Telefone: {telefone}")
-    if autorizacao:
-        linhas.append(f"🔖 Autorização de agendamento: {autorizacao}")
-    if alerta:
-        linhas.append(f"⚠️ Alerta: {alerta}")
-
-    return "\n".join(linhas)
+    msg = (
+        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
+        f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
+        f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
+        f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
+        f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
+        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
+        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
+    )
+    return msg
 
 
 async def configurar_menu_comandos(app):
@@ -295,14 +207,14 @@ async def configurar_menu_comandos(app):
         BotCommand("verificar", "Verifica o status de todas as suas regulações"),
         BotCommand("consultar", "Consulta o status de uma regulação específica"),
         BotCommand("cadastrar", "Cadastra uma nova regulação"),
-        BotCommand("corrigir", "Corrige dados de uma regulação cadastrada"),
+        BotCommand("corrigir", "Corrigi dados de uma regulação cadastrada"),
         BotCommand("excluir", "Exclui uma regulação cadastrada"),
         BotCommand("ajuda", "Exibe as instruções de uso do sistema")
     ]
     await app.bot.set_my_commands(comandos)
 
 # --------------------------------------------------
-# HANDLERS BASE E COMANDOS DIRECTOS
+# HANDLERS BASE E COMANDOS DIRETO
 # --------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -363,290 +275,234 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         parse_mode="HTML"
     )
 
-    resultados = []
     for reg in regulacoes:
+        num_reg, _ = _extrair_id_e_nome(reg)
         try:
-            num_reg, nome = _extrair_id_e_nome(reg)
-            campos = _extrair_campos_completos(reg)
-            
             resultado = await consultar_status_fms(num_reg)
-            resultados.append({
-                "numero": num_reg,
-                "nome": nome,
-                "campos": campos,
-                "resultado": resultado
-            })
+            if resultado and resultado.get("sucesso"):
+                msg_html = _montar_msg_html(num_reg, resultado, reg)
+                await update.message.reply_text(msg_html, parse_mode="HTML")
+            else:
+                msg_erro = resultado.get("mensagem") if resultado else "Sem resposta do portal FMS."
+                await update.message.reply_text(
+                    f"⚠️ <b>Regulação {escape(str(num_reg))}:</b> {escape(str(msg_erro))}",
+                    parse_mode="HTML"
+                )
         except Exception as e:
-            logger.error(f"Erro ao consultar regulação: {e}")
-            continue
-
-    if not resultados:
-        await msg_inicial.edit_text("❌ Erro ao consultar as regulações. Tente novamente mais tarde.")
-        return
-
-    # Monta mensagem com todos os resultados, um bloco organizado por regulação
-    blocos = []
-    for item in resultados:
-        campos = item["campos"]
-        resultado = item["resultado"]
-
-        blocos.append(
-            _formatar_bloco_regulacao(
-                numero=item["numero"],
-                nome=item["nome"],
-                cartao_sus=campos.get("cartao_sus"),
-                cbo=campos.get("cbo"),
-                procedimento=campos.get("procedimento"),
-                status_bruto=campos.get("status_atual") or resultado.get("status"),
-                especialidade=resultado.get("especialidade_procedimento") or campos.get("especialidade"),
+            logger.error(f"Erro ao consultar regulação {num_reg}: {e}")
+            await update.message.reply_text(
+                f"❌ <b>Regulação {escape(str(num_reg))}:</b> Falha temporária ao consultar na FMS.",
+                parse_mode="HTML"
             )
-        )
 
-    separador = "\n➖➖➖➖➖➖➖➖➖➖\n"
-    msg_resposta = "📋 <b>STATUS DE TODAS AS SUAS REGULAÇÕES</b>\n\n" + separador.join(blocos)
+    try:
+        await msg_inicial.delete()
+    except Exception:
+        pass
 
-    await msg_inicial.edit_text(msg_resposta, parse_mode="HTML")
-    await update.message.reply_text("Escolha uma opção:", reply_markup=TECLADO_MENU)
+    await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
 
 
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Inicia a consulta específica de uma regulação."""
-    user_id = update.effective_user.id
-    regulacoes = buscar_regulacoes_por_usuario(user_id)
-
-    if not regulacoes:
-        await update.message.reply_text(
-            "⚠️ Você não possui nenhuma regulação cadastrada.",
-            reply_markup=TECLADO_MENU
-        )
-        return ConversationHandler.END
-
-    teclado = []
-    for reg in regulacoes:
-        num, nome = _extrair_id_e_nome(reg)
-        teclado.append([InlineKeyboardButton(f"🔍 {num} - {nome}", callback_data=f"ver_esp_{num}")])
-    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
-
+    """Função de entrada para o fluxo de consulta específica."""
     await update.message.reply_text(
-        "🔍 <b>Selecione qual regulação deseja verificar:</b>",
+        "🔎 Por favor, digite o <b>número da regulação</b> que deseja consultar:",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(teclado)
+        reply_markup=TECLADO_CANCELAR
     )
     return CONSULTAR_ID
 
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Processa a verificação específica de uma regulação."""
+    """Processa a consulta de um número de regulação via texto digitado ou callback."""
     query = update.callback_query
 
+    # 1. Entrada via Botão Inline
     if query:
         await query.answer()
+
         if query.data == "cancelar_ver_esp":
-            await query.edit_message_text("❌ Consulta cancelada.")
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Menu:", reply_markup=TECLADO_MENU)
+            await query.edit_message_text("❌ Operação de consulta cancelada.")
+            await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+            context.user_data.clear()
             return ConversationHandler.END
 
-        num_regulacao = query.data.replace("ver_esp_", "")
-        msg_aguarde = query.message
-        await msg_aguarde.edit_text("⏳ Aguardando consulta, por favor aguarde...")
+        numero_reg = query.data.replace("ver_esp_", "")
+        msg_espera = await query.message.reply_text(
+            f"⌛ <b>Aguardando consulta...</b>\nBuscando dados da regulação <code>{escape(numero_reg)}</code> no portal da FMS.",
+            parse_mode="HTML"
+        )
+
+    # 2. Entrada via Texto Digitado
     else:
         if await verificar_se_e_menu_e_executar(update, context):
             return ConversationHandler.END
-        num_regulacao = update.message.text.strip()
-        msg_aguarde = await update.message.reply_text("⏳ Aguardando consulta, por favor aguarde...")
 
-    try:
-        resultado = await consultar_status_fms(num_regulacao)
+        texto = update.message.text.strip()
+        numero_reg = re.sub(r"\D", "", texto)
 
-        reg_db = None
-        try:
-            reg_db = obter_regulacao_por_numero(num_regulacao)
-        except Exception as e:
-            logger.error(f"Erro ao buscar regulação no banco: {e}")
-        campos_db = _extrair_campos_completos(reg_db) if reg_db else {}
-
-        if resultado.get("sucesso"):
-            msg = _formatar_bloco_regulacao(
-                numero=num_regulacao,
-                nome=resultado.get("nome_paciente") or campos_db.get("nome_paciente"),
-                cartao_sus=resultado.get("cartao_sus") or campos_db.get("cartao_sus"),
-                cbo=campos_db.get("cbo"),
-                procedimento=campos_db.get("procedimento"),
-                status_bruto=resultado.get("status") or campos_db.get("status_atual"),
-                especialidade=resultado.get("especialidade_procedimento"),
+        if not numero_reg:
+            await update.message.reply_text(
+                "⚠️ Por favor, digite apenas os números da regulação:", 
+                reply_markup=TECLADO_CANCELAR
             )
-        else:
-            msg = f"❌ Regulação {num_regulacao} não encontrada no sistema FMS."
+            return CONSULTAR_ID
 
-        await msg_aguarde.edit_text(msg, parse_mode="HTML")
+        msg_espera = await update.message.reply_text(
+            f"⌛ <b>Aguardando consulta...</b>\nBuscando dados da regulação <code>{escape(numero_reg)}</code> no portal da FMS.",
+            parse_mode="HTML"
+        )
 
+    # 3. Execução da busca no Banco e na FMS
+    try:
+        reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
+        resultado = await consultar_status_fms(numero_reg)
     except Exception as e:
-        logger.error(f"Erro ao consultar regulação específica: {e}")
-        await msg_aguarde.edit_text("❌ Erro ao consultar. Tente novamente.")
+        logger.error(f"Erro no processamento da regulação {numero_reg}: {e}")
+        resultado = {"sucesso": False, "mensagem": "Ocorreu uma falha ao conectar com o portal da FMS."}
+        reg_db = None
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Escolha uma opção:", reply_markup=TECLADO_MENU)
+    # Remove mensagem de espera
+    try:
+        await msg_espera.delete()
+    except Exception:
+        pass
+
+    # Exibe o resultado final
+    if resultado and resultado.get("sucesso"):
+        msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
+        if query:
+            await query.edit_message_text(msg_html, parse_mode="HTML")
+            await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+        else:
+            await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
+    else:
+        msg_erro = resultado.get("mensagem") if resultado else "Regulação não encontrada na FMS."
+        if query:
+            await query.edit_message_text(f"❌ {escape(str(msg_erro))}", parse_mode="HTML")
+            await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
+        else:
+            await update.message.reply_text(f"❌ {escape(str(msg_erro))}", parse_mode="HTML", reply_markup=TECLADO_MENU)
+
     context.user_data.clear()
     return ConversationHandler.END
 
-
 # --------------------------------------------------
-# FLUXO DE CADASTRO
+# FLUXO DE CADASTRO MANUAL
 # --------------------------------------------------
 
 async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Inicia o fluxo de cadastro manual de regulação."""
+    """Inicia a sequência de perguntas para cadastro de nova regulação."""
     context.user_data.clear()
     await update.message.reply_text(
-        "📝 <b>CADASTRO DE NOVA REGULAÇÃO</b>\n\n"
-        "Digite o <b>número do Cartão SUS</b> do paciente (14 dígitos):",
+        "📝 <b>Iniciando cadastro de nova regulação.</b>\n\n"
+        "Por favor, digite o <b>número do Cartão SUS</b> do paciente (15 dígitos):",
         parse_mode="HTML",
         reply_markup=TECLADO_CANCELAR
     )
     return ETAPA_SUS
 
-
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe e valida o número do Cartão SUS."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    sus = update.message.text.strip()
-    
-    if not re.match(r'^\d{14}$', sus):
-        await update.message.reply_text(
-            "❌ Cartão SUS deve ter 14 dígitos. Tente novamente:",
-            reply_markup=TECLADO_CANCELAR
-        )
+    sus = re.sub(r"\D", "", update.message.text)
+    if len(sus) != 15:
+        await update.message.reply_text("⚠️ O Cartão SUS deve conter exatamente 15 dígitos. Tente novamente:")
         return ETAPA_SUS
-    
+
     context.user_data["sus"] = sus
-    await update.message.reply_text(
-        "✅ Cartão SUS registrado.\n\n"
-        "Digite o <b>nome do paciente</b>:",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+    await update.message.reply_text("Qual o <b>nome completo</b> do paciente?", parse_mode="HTML")
     return ETAPA_NOME
 
-
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe o nome do paciente."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
     context.user_data["nome"] = update.message.text.strip()
-    await update.message.reply_text(
-        "✅ Nome registrado.\n\n"
-        "Digite o <b>celular</b> (com DDD, ex: 86999999999):",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+    await update.message.reply_text("Informe o <b>número do celular/WhatsApp</b> (com DDD):", parse_mode="HTML")
     return ETAPA_CELULAR
 
-
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe o celular do paciente."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["celular"] = update.message.text.strip()
-    await update.message.reply_text(
-        "✅ Celular registrado.\n\n"
-        "Digite a <b>data de nascimento</b> (formato: DD/MM/YYYY):",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+    celular = re.sub(r"\D", "", update.message.text)
+    if len(celular) < 10:
+        await update.message.reply_text("⚠️ Número inválido. Digite o DDD + Número (ex: 86999998888):")
+        return ETAPA_CELULAR
+
+    context.user_data["celular"] = celular
+    await update.message.reply_text("Qual a <b>data de nascimento</b> do paciente? (DD/MM/AAAA):", parse_mode="HTML")
     return ETAPA_NASCIMENTO
 
-
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe a data de nascimento."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    nascimento = update.message.text.strip()
-    
-    if not re.match(r'^\d{2}/\d{2}/\d{4}$', nascimento):
-        await update.message.reply_text(
-            "❌ Formato inválido. Use DD/MM/YYYY:",
-            reply_markup=TECLADO_CANCELAR
-        )
+    data_str = update.message.text.strip()
+    try:
+        data_valida = datetime.strptime(data_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+        context.user_data["nascimento"] = data_valida
+    except ValueError:
+        await update.message.reply_text("⚠️ Formato de data inválido! Digite no formato <b>DD/MM/AAAA</b>:", parse_mode="HTML")
         return ETAPA_NASCIMENTO
-    
-    context.user_data["nascimento"] = nascimento
-    await update.message.reply_text(
-        "✅ Data de nascimento registrada.\n\n"
-        "Digite o <b>número da regulação</b>:",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+
+    await update.message.reply_text("Digite o <b>número do ID da Regulação</b> (apenas números):", parse_mode="HTML")
     return ETAPA_REGULACAO
 
-
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe o número da regulação."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["numero_regulacao"] = update.message.text.strip()
-    await update.message.reply_text(
-        "✅ Número da regulação registrado.\n\n"
-        "Digite o <b>CBO</b> (deixe em branco se não souber):",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+    num_reg = re.sub(r"\D", "", update.message.text)
+    if not num_reg:
+        await update.message.reply_text("⚠️ Digite um número de regulação válido:")
+        return ETAPA_REGULACAO
+
+    context.user_data["numero_regulacao"] = num_reg
+    await update.message.reply_text("Informe o código <b>CBO</b> da especialidade (opcional - digite 0 para pular):", parse_mode="HTML")
     return ETAPA_CBO
 
-
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe o CBO."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    context.user_data["cbo"] = update.message.text.strip() or None
-    await update.message.reply_text(
-        "✅ CBO registrado.\n\n"
-        "Digite o <b>procedimento</b> solicitado:",
-        parse_mode="HTML",
-        reply_markup=TECLADO_CANCELAR
-    )
+    cbo = update.message.text.strip()
+    context.user_data["cbo"] = cbo if cbo != "0" else ""
+    await update.message.reply_text("Qual a descrição do <b>Procedimento/Exame</b>?", parse_mode="HTML")
     return ETAPA_PROCEDIMENTO
 
-
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recebe o procedimento."""
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
     context.user_data["procedimento"] = update.message.text.strip()
-    
-    # Exibe confirmação LGPD
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Aceitar", callback_data="aceitar_lgpd")],
-        [InlineKeyboardButton("❌ Recusar", callback_data="cancelar_cadastro")]
+
+    teclado_lgpd = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Aceitar e Finalizar", callback_data="aceitar_lgpd")],
+        [InlineKeyboardButton("❌ Cancelar Cadastro", callback_data="cancelar_cadastro")]
     ])
-    
+
     await update.message.reply_text(
-        "<b>CONFORMIDADE COM LGPD</b>\n\n"
-        "Você autoriza o AlertaSUS 2.0 a coletar e armazenar seus dados pessoais "
-        "para acompanhar regulações na FMS Piauí?",
+        "🛡️ <b>TERMO DE CONSENTIMENTO LGPD</b>\n\n"
+        "Para prosseguir com o monitoramento automático, autorizo o armazenamento dos dados fornecidos exclusivamente para finalidades de consulta pública no sistema FMS Piauí.\n\n"
+        "Você aceita o termo?",
         parse_mode="HTML",
-        reply_markup=keyboard
+        reply_markup=teclado_lgpd
     )
     return ETAPA_LGPD
 
-
 async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Finaliza o cadastro."""
     query = update.callback_query
     await query.answer()
-    
+
     if query.data == "cancelar_cadastro":
-        await query.edit_message_text("❌ Cadastro cancelado.")
-        await query.message.reply_text("Menu:", reply_markup=TECLADO_MENU)
+        await query.edit_message_text("❌ Cadastro cancelado pelo usuário.")
+        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
         context.user_data.clear()
         return ConversationHandler.END
-    
+
     user_id = update.effective_user.id
     dados = context.user_data
 
@@ -665,11 +521,11 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await registrar_consentimento_lgpd(user_id, aceito=True)
 
     if sucesso:
-        await query.edit_message_text("✅ <b>Regulação cadastrada com sucesso!</b>\nEla será monitorada automaticamente.", parse_mode="HTML")
+        await query.edit_message_text("✅ <b>Regulação cadastrada com sucesso!</b>\nEla será monitorada automaticamente pelo sistema.", parse_mode="HTML")
     else:
-        await query.edit_message_text("❌ Erro ao salvar. Tente novamente.", parse_mode="HTML")
+        await query.edit_message_text("❌ Ocorreu um erro ao salvar a regulação no banco de dados. Tente novamente mais tarde.")
 
-    await query.message.reply_text("Escolha uma opção:", reply_markup=TECLADO_MENU)
+    await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -827,32 +683,24 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
     regulacoes = await buscar_todas_regulacoes_ativas()
 
     for reg in regulacoes:
-        try:
-            num_reg, nome = _extrair_id_e_nome(reg)
-            campos = _extrair_campos_completos(reg)
-            telegram_id = reg.get("telegram_id")
-            status_antigo = campos['status_atual']
+        num_reg, _ = _extrair_id_e_nome(reg)
+        telegram_id = reg.get("telegram_id")
+        status_antigo = reg.get("status_atual")
 
-            resultado = await consultar_status_fms(num_reg)
+        resultado = await consultar_status_fms(num_reg)
 
-            if resultado.get("sucesso"):
-                novo_status = resultado.get("status")
-                if novo_status and novo_status != status_antigo:
-                    reg_db_id = reg.get("id") or reg.get("id_regulacao")
-                    if reg_db_id:
-                        await atualizar_campo_regulacao(reg_db_id, "status_atual", novo_status)
-                    
-                    msg_notificacao = (
-                        f"🔔 <b>MUDANÇA DE STATUS DETECTADA!</b>\n\n"
-                        f"<b>Regulação:</b> {num_reg}\n"
-                        f"<b>Paciente:</b> {nome}\n"
-                        f"<b>Status Anterior:</b> {status_antigo}\n"
-                        f"<b>Novo Status:</b> {novo_status}\n"
-                        f"<b>Posição na Fila:</b> {resultado.get('posicao_fila', 'N/A')}"
-                    )
-                    try:
-                        await context.bot.send_message(chat_id=telegram_id, text=msg_notificacao, parse_mode="HTML")
-                    except Exception as e:
-                        logger.error(f"Erro ao enviar notificação para {telegram_id}: {e}")
-        except Exception as e:
-            logger.error(f"Erro na varredura automática: {e}")
+        if resultado.get("sucesso"):
+            novo_status = resultado.get("status") or "PENDENTE"
+            if novo_status and novo_status != status_antigo:
+                reg_db_id = reg.get("id") or reg.get("id_regulacao")
+                if reg_db_id:
+                    await atualizar_campo_regulacao(reg_db_id, "status_atual", novo_status)
+                
+                msg_notificacao = (
+                    f"🔔 <b>MUDANÇA DE STATUS DETECTADA!</b>\n\n"
+                    f"{_montar_msg_html(num_reg, resultado, reg)}"
+                )
+                try:
+                    await context.bot.send_message(chat_id=telegram_id, text=msg_notificacao, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"Erro ao enviar notificação para {telegram_id}: {e}")
