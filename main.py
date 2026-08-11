@@ -77,24 +77,48 @@ logging.basicConfig(
 # --------------------------------------------------
 
 # 1. Cadastro Interativo
+# 1. Cadastro Interativo no Telegram
 conv_cadastro = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), iniciar_cadastro_manual),
         CommandHandler("cadastrar", iniciar_cadastro_manual)
     ],
     states={
-        ETAPA_SUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)],
-        ETAPA_NOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)],
-        ETAPA_CELULAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)],
-        ETAPA_NASCIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)],
-        ETAPA_REGULACAO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)],
-        ETAPA_CBO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)],
-        ETAPA_PROCEDIMENTO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)],
-        ETAPA_LGPD: [CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")]
+        ETAPA_SUS: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)
+        ],
+        ETAPA_NOME: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)
+        ],
+        ETAPA_CELULAR: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)
+        ],
+        ETAPA_NASCIMENTO: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)
+        ],
+        ETAPA_REGULACAO: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)
+        ],
+        ETAPA_CBO: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)
+        ],
+        ETAPA_PROCEDIMENTO: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)
+        ],
+        ETAPA_LGPD: [
+            CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")
+        ]
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_operacao),
-        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_operacao)
+        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
     ],
     allow_reentry=True,
     per_message=False
@@ -109,12 +133,13 @@ conv_verificar_especifico = ConversationHandler(
     states={
         CONSULTAR_ID: [
             CallbackQueryHandler(processar_verificar_especifico, pattern="^(ver_esp_|cancelar_ver_esp)$"),
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
             MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)
         ]
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_operacao),
-        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_operacao)
+        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
     ],
     allow_reentry=True,
     per_message=False
@@ -134,12 +159,13 @@ conv_corrigir = ConversationHandler(
             CallbackQueryHandler(selecionar_campo_callback)
         ],
         AGUARDAR_NOVO_VALOR: [
+            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_corrigir),
             MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_novo_valor)
         ]
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_corrigir),
-        MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_corrigir)
+        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_corrigir)
     ],
     allow_reentry=True,
     per_message=False
@@ -161,7 +187,7 @@ conv_excluir = ConversationHandler(
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_excluir),
-        MessageHandler(filters.Regex("(?i)cancelar"), cancelar_excluir)
+        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_excluir)
     ],
     allow_reentry=True,
     per_message=False
