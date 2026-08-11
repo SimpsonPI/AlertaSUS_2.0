@@ -178,11 +178,25 @@ def _extrair_campos_completos(reg: dict):
         "data_nascimento": reg.get("data_nascimento") or reg.get("nascimento"),
         "cbo": reg.get("cbo"),
         "procedimento": reg.get("procedimento"),
-        "status_atual": reg.get("status_atual") or reg.get("status"),
+        "status_atual": reg.get("status_atual") or reg.get("status") or reg.get("status_anterior"),
         "especialidade": reg.get("especialidade") or reg.get("especialidade_procedimento"),
         "posicao_fila": reg.get("posicao_fila") or reg.get("posicao"),
         "data_regulacao": reg.get("data_regulacao") or reg.get("data_criacao"),
     }
+
+
+def _mascarar_dado_sensivel(valor, exibir_ultimos: int = 4) -> str:
+    """
+    Mascara um dado sensível para exibição, seguindo a LGPD:
+    mostra apenas os últimos dígitos e substitui o restante por '*'.
+    Ex: '70900167715818' -> '**********5818'
+    """
+    if not valor:
+        return "N/A"
+    texto = str(valor)
+    if len(texto) <= exibir_ultimos:
+        return "*" * len(texto)
+    return "*" * (len(texto) - exibir_ultimos) + texto[-exibir_ultimos:]
 
 
 async def configurar_menu_comandos(app):
@@ -291,10 +305,10 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
         msg_resposta += (
             f"<b>Regulação: {item['numero']}</b>\n"
             f"👤 Paciente: {item['nome']}\n"
-            f"🆔 Cartão SUS: {campos['cartao_sus'] or 'N/A'}\n"
+            f"🆔 Cartão SUS: {_mascarar_dado_sensivel(campos['cartao_sus'])}\n"
             f"📊 Status: {campos['status_atual'] or resultado.get('status', 'N/A')}\n"
-            f"📍 Fila: {campos['posicao_fila'] or 'N/A'}\n"
-            f"🏥 Especialidade: {campos['especialidade'] or 'N/A'}\n\n"
+            f"📍 Fila: {campos['posicao_fila'] or resultado.get('posicao_fila', 'N/A')}\n"
+            f"🏥 Especialidade: {campos['especialidade'] or resultado.get('especialidade_procedimento', 'N/A')}\n\n"
         )
 
     await msg_inicial.edit_text(msg_resposta, parse_mode="HTML")
@@ -352,7 +366,7 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             msg = (
                 f"<b>STATUS DA REGULAÇÃO</b>\n"
                 f"ID Regulação: {num_regulacao}\n"
-                f"Cartão SUS: {resultado.get('cartao_sus', 'N/A')}\n"
+                f"Cartão SUS: {_mascarar_dado_sensivel(resultado.get('cartao_sus'))}\n"
                 f"Paciente: {resultado.get('nome_paciente', 'N/A')}\n"
                 f"Especialidade/Procedimento: {resultado.get('especialidade_procedimento', 'N/A')}\n"
                 f"Status: {resultado.get('status', 'N/A')}\n"
