@@ -138,10 +138,23 @@ def _mascarar_sus(sus: str) -> str:
 
 
 def tratar_status_fms(status_fms: str) -> str:
-    """Garante que status indefinidos ou vazios retornem 'PENDENTE'."""
-    if not status_fms or str(status_fms).strip().upper() in ["", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO"]:
+    """Trata o status da FMS garantindo que valores indefinidos ou genéricos retornem 'PENDENTE'."""
+    if not status_fms:
         return "PENDENTE"
-    return str(status_fms).strip().upper()
+    
+    status_clean = str(status_fms).strip().upper()
+    
+    # Termos a serem substituídos por PENDENTE
+    termos_invalidos = [
+        "", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO", 
+        "INFORMADA NO PORTAL", "NÃO INFORMADA NO PORTAL", "INDEFINIDO"
+    ]
+    
+    for termo in termos_invalidos:
+        if termo in status_clean:
+            return "PENDENTE"
+            
+    return status_clean
 
 
 async def _buscar_regulacao_por_id_reg(numero_reg: str):
@@ -205,21 +218,22 @@ def _extrair_id_e_nome(reg: dict):
 
 
 def _extrair_status_limpo(resultado: dict, reg_db: dict = None) -> str:
-    """Extrai o status priorizando a FMS e, em seguida, analisa o campo status_anterior do Supabase."""
+    """Extrai o status priorizando a FMS e aplicando o tratamento de fallbacks para PENDENTE."""
     status_fms = _obter_valor(resultado, "status", "situacao")
-    if status_fms and status_fms.upper() not in ("N/A", "NONE", ""):
-        return status_fms.upper()
+    if status_fms:
+        status_tratado = tratar_status_fms(status_fms)
+        if status_tratado != "PENDENTE":
+            return status_tratado
 
     status_db = _obter_valor(reg_db, "status_anterior", "status_atual", "status")
     if status_db:
         match = re.search(r"(?:Situação|Status):\s*([^|]+)", status_db, re.IGNORECASE)
         if match:
-            return match.group(1).strip().upper()
+            return tratar_status_fms(match.group(1))
         
         for st in ["AGENDADA", "VENCIDA", "CANCELADA", "PENDENTE"]:
             if st in status_db.upper():
                 return st
-        return status_db.strip().upper()
 
     return "PENDENTE"
 
@@ -413,7 +427,7 @@ async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEF
 
 
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa a seleção do ID da regulação (via botão inline ou mensagem de texto)."""
+    """Processa a seleção do ID e executa a consulta na FMS imediatamente."""
     try:
         query = update.callback_query
         num_reg = None
@@ -630,7 +644,7 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ConversationHandler.END
 
 # --------------------------------------------------
-# FLUXO DE CORREÇÃO
+# FLUXO DE CORREÇÃO (AJUSTADO E CORRIGIDO)
 # --------------------------------------------------
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -701,7 +715,13 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     reg_id = context.user_data.get("corr_reg_id")
     campo = context.user_data.get("corr_campo")
 
-    sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
+    if not reg_id or not campo:
+        await update.message.reply_text("⚠️ Sessão inspirada ou dados inválidos. Tente o processo novamente.", reply_markup=TECLADO_MENU)
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
+    sucesso = await res if hasattr(res, "__await__") else res
 
     if sucesso:
         await update.message.reply_text("✅ Campo atualizado com sucesso no Supabase!", reply_markup=TECLADO_MENU)
@@ -767,7 +787,8 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
 
     if query.data == "conf_excl_sim":
         reg_id = context.user_data.get("excl_reg_id")
-        sucesso = await excluir_regulacao_db(reg_id)
+        res = excluir_regulacao_db(reg_id)
+        sucesso = await res if hasattr(res, "__await__") else res
 
         if sucesso:
             await query.edit_message_text("✅ Regulação excluída com sucesso!")
@@ -801,11 +822,13 @@ async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
         resultado = await consultar_status_fms(num_reg)
 
         if resultado.get("sucesso"):
-            novo_status = resultado.get("status") or "PENDENTE"
+            novo_status = tratar_status_fms(resultado.get("status"))
             if novo_status and novo_status != status_antigo:
                 reg_db_id = reg.get("id") or reg.get("id_regulacao")
                 if reg_db_id:
-                    await atualizar_campo_regulacao(reg_db_id, "status_anterior", novo_status)
+                    res = atualizar_campo_regulacao(reg_db_id, "status_anterior", novo_status)
+                    if hasattr(res, "__await__"):
+                        await res
                 
                 msg_notificacao = (
                     f"🔔 <b>MUDANÇA DE STATUS DETECTADA!</b>\n\n"
