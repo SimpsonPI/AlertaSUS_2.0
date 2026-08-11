@@ -237,66 +237,66 @@ def _extrair_status_limpo(resultado: dict, reg_db: dict = None) -> str:
     return "PENDENTE"
 
 
+from html import escape
+
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Formata os dados da regulação exibindo detalhes completos de agendamento se existirem."""
+    """Formata a mensagem em HTML exibindo detalhes completos de consulta marcada ou posição na fila."""
     resultado = resultado or {}
     reg_db = reg_db or {}
 
-    status = _extrair_status_limpo(resultado, reg_db)
-    
-    # Dados básicos
-    cbo = _obter_valor(resultado, "cbo") or _obter_valor(reg_db, "cbo") or "N/A"
-    procedimento = _obter_valor(resultado, "procedimento") or _obter_valor(reg_db, "procedimento") or "N/A"
-    paciente_raw = _obter_valor(resultado, "paciente", "nome_paciente") or _obter_valor(reg_db, "nome_paciente", "paciente") or "N/A"
-    sus_raw = _obter_valor(resultado, "cartao_sus", "numero_sus") or _obter_valor(reg_db, "numero_sus") or "N/A"
+    # Dados cadastrais básicos (do banco ou do resultado)
+    cbo = resultado.get("cbo") or reg_db.get("cbo") or "N/A"
+    procedimento = resultado.get("procedimento") or reg_db.get("procedimento") or "N/A"
+    paciente_raw = resultado.get("paciente") or reg_db.get("nome_paciente") or "N/A"
+    sus_raw = resultado.get("cartao_sus") or reg_db.get("numero_sus") or "N/A"
 
-    paciente_mascarado = mascarar_nome(paciente_raw)
-    sus_mascarado = _mascarar_sus(sus_raw)
+    # Aplica mascaramento de segurança
+    paciente_mascarado = mascarar_nome(paciente_raw) if 'mascarar_nome' in globals() else paciente_raw
+    sus_mascarado = _mascarar_sus(sus_raw) if '_mascarar_sus' in globals() else sus_raw
 
-    # Extração dos dados específicos de agendamento (capturados pelo scraper)
-    data_consulta = _obter_valor(resultado, "data_consulta", "data_hora")
-    autorizacao = _obter_valor(resultado, "autorizacao", "codigo_autorizacao")
-    estabelecimento = _obter_valor(resultado, "estabelecimento", "local")
-    endereco = _obter_valor(resultado, "endereco")
-    telefone = _obter_valor(resultado, "telefone", "telefones")
-    aviso_fms = _obter_valor(resultado, "aviso", "mensagem_alerta")
+    # Status / Situação
+    situacao = resultado.get("situacao") or resultado.get("status") or reg_db.get("status") or "PENDENTE"
 
     # Bloco Principal
     msg = (
         f"📋 <b>STATUS DA REGULAÇÃO</b>\n\n"
         f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
-        f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
-        f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
+        f"<b>Cartão SUS:</b> <code>{escape(str(sus_mascarado))}</code>\n"
+        f"<b>Paciente:</b> {escape(str(paciente_mascarado))}\n"
         f"<b>CBO:</b> {escape(str(cbo))}\n"
         f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
-        f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
+        f"<b>Status:</b> <b>{escape(str(situacao))}</b>\n"
     )
 
-    # Se estiver agendado/marcado e houver dados de consulta
-    if data_consulta or estabelecimento:
+    # Extrai os novos campos do scraper
+    data_consulta = resultado.get("data_consulta")
+    estabelecimento = resultado.get("estabelecimento")
+    autorizacao = resultado.get("autorizacao")
+    endereco = resultado.get("endereco")
+    telefone = resultado.get("telefone")
+    alerta = resultado.get("alerta_fms")
+
+    # Se a consulta estiver MARCADA / AGENDADA ou contiver dados de agendamento
+    if data_consulta or estabelecimento or str(situacao).upper() == "MARCADA":
         msg += f"\n📅 <b>DADOS DO AGENDAMENTO</b>\n"
         if data_consulta:
-            msg += f"<b>Data/Hora:</b> {escape(str(data_consulta))}\n"
+            msg += f"• <b>Data/Hora:</b> {escape(str(data_consulta))}\n"
         if autorizacao:
-            msg += f"<b>Autorização:</b> <code>{escape(str(autorizacao))}</code>\n"
+            msg += f"• <b>Autorização:</b> <code>{escape(str(autorizacao))}</code>\n"
 
         msg += f"\n🏥 <b>LOCAL DO ATENDIMENTO</b>\n"
         if estabelecimento:
-            msg += f"<b>Local:</b> {escape(str(estabelecimento))}\n"
+            msg += f"• <b>Local:</b> {escape(str(estabelecimento))}\n"
         if endereco:
-            msg += f"<b>Endereço:</b> {escape(str(endereco))}\n"
+            msg += f"• <b>Endereço:</b> {escape(str(endereco))}\n"
         if telefone:
-            msg += f"<b>Telefone:</b> {escape(str(telefone))}\n"
+            msg += f"• <b>Telefone:</b> {escape(str(telefone))}\n"
 
-        if aviso_fms:
-            msg += f"\n⚠️ <b>AVISO:</b> <i>{escape(str(aviso_fms))}</i>\n"
+        if alerta:
+            msg += f"\n⚠️ <b>AVISO:</b> <i>{escape(str(alerta))}</i>\n"
     else:
-        # Se ainda estiver na fila de espera
-        posicao = (
-            _obter_valor(resultado, "posicao", "posicao_fila") or 
-            _obter_valor(reg_db, "posicao", "posicao_fila") or 
-            "Não informada"
-        )
+        # Se ainda estiver pendente / aguardando na fila
+        posicao = resultado.get("posicao_fila") or reg_db.get("posicao_fila") or "Não informada"
         msg += f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
 
     return msg
