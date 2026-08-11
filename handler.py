@@ -744,12 +744,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     reg_id = context.user_data.get("corr_reg_id") or context.user_data.get("reg_id")
     campo = context.user_data.get("corr_campo")
 
-    # Formatação rápida se o campo for data de nascimento e o usuário digitar só números (ex: 18081978)
-    if campo == "data_nascimento" and len(novo_valor) == 8 and novo_valor.isdigit():
-        novo_valor = f"{novo_valor[4:]}-{novo_valor[2:4]}-{novo_valor[:2]}" # Converte para YYYY-MM-DD (padrão SQL)
-
-    logger.info(f"Tentando atualizar no Supabase -> ID do Banco: {reg_id} | Campo: {campo} | Novo Valor: {novo_valor}")
-
+    # 1. Trava de segurança no início: verifica se reg_id e campo existem na sessão
     if not reg_id or not campo:
         await update.message.reply_text(
             "⚠️ <b>Dados da sessão perdidos.</b> Por favor, inicie a correção novamente.",
@@ -759,6 +754,16 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data.clear()
         return ConversationHandler.END
 
+    # 2. Formatação para data de nascimento (aceita DDMMYYYY ou DD/MM/YYYY)
+    if campo == "data_nascimento":
+        apenas_numeros = re.sub(r"\D", "", novo_valor)
+        if len(apenas_numeros) == 8:
+            dia, mes, ano = apenas_numeros[:2], apenas_numeros[2:4], apenas_numeros[4:]
+            novo_valor = f"{ano}-{mes}-{dia}"  # Converte para YYYY-MM-DD (padrão PostgreSQL)
+
+    logger.info(f"Tentando atualizar no Supabase -> ID/Reg: {reg_id} | Campo: {campo} | Novo Valor: {novo_valor}")
+
+    # 3. Execução da atualização no banco
     try:
         res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
         sucesso = await res if hasattr(res, "__await__") else res
@@ -766,6 +771,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
         sucesso = False
 
+    # 4. Retorno visual para o usuário
     if sucesso:
         await update.message.reply_text(
             "✅ <b>Registro atualizado com sucesso no banco de dados!</b>", 
