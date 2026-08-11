@@ -1,5 +1,7 @@
 import os
 import logging
+import re
+from datetime import datetime
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,28 @@ def _obter_tabelas():
     return [TABELA_SUPABASE, "principal"]
 
 
+def _formatar_valor_campo(campo: str, valor: str) -> str:
+    """Trata e converte os valores para os tipos esperados pelo PostgreSQL/Supabase."""
+    txt = str(valor).strip()
+    
+    # Tratamento especial para datas de nascimento (converte DDMMAAAA ou DD/MM/AAAA para AAAA-MM-DD)
+    if campo in ["data_nascimento", "dt_nascimento", "data_nac"]:
+        nums = re.sub(r"\D", "", txt)
+        
+        # Formato DDMMAAAA (ex: 18091977 -> 1977-09-18)
+        if len(nums) == 8:
+            dia, mes, ano = nums[:2], nums[2:4], nums[4:]
+            return f"{ano}-{mes}-{dia}"
+            
+        # Formato DD/MM/AAAA (ex: 18/09/1977 -> 1977-09-18)
+        if "/" in txt:
+            partes = txt.split("/")
+            if len(partes) == 3:
+                return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
+                
+    return txt
+
+
 def buscar_regulacoes_por_chat_id(chat_id):
     """Busca regulações no Supabase testando colunas individualmente sem interromper em caso de erro."""
     try:
@@ -40,7 +64,6 @@ def buscar_regulacoes_por_chat_id(chat_id):
                             print(f"📊 DEBUG SUPABASE: {len(res.data)} registros encontrados na tabela '{tabela}' (coluna '{col}').", flush=True)
                             return res.data
                     except Exception:
-                        # Ignora se a coluna não existir na tabela e tenta a próxima coluna
                         continue
 
         print("📊 DEBUG SUPABASE: Nenhum registro encontrado em nenhuma coluna/tabela.", flush=True)
@@ -87,38 +110,57 @@ async def salvar_regulacao(dados: dict) -> bool:
         return False
 
 
-async def atualizar_campo_regulacao(reg_id, campo: str, valor) -> bool:
-    """Atualiza dinamicamente um campo específico no Supabase testando IDs e nomes de colunas alternativos."""
+async def atualizar_campo_regulacao(reg_id, campo: str, valor: str) -> bool:
+    """Atualiza ou insere (UPSERT) o registro no Supabase com tratamento de tipos e logs detalhados."""
     try:
+        if not reg_id or not campo:
+            print("❌ [Supabase] ID ou Campo nulos recebidos para atualização.", flush=True)
+            return False
+
         num_str = str(reg_id).strip()
         num_int = int(num_str) if num_str.isdigit() else None
+        id_query = num_int if num_int is not None else num_str
 
-        # Lista de possíveis colunas para identificar o registro (Primary Key ou número do ID)
-        colunas_id = ["id", "numero_reg", "id_regulacao"]
-        valores_id = [num_str, num_int] if num_int is not None else [num_str]
+        # Tratamento e conversão prévia do valor (ex: datas -> AAAA-MM-DD)
+        valor_formatado = _formatar_valor_campo(campo, valor)
 
-        # Lista de nomes alternativos de colunas para caso a tabela no Supabase use nomes ligeiramente diferentes
-        variacoes_campo = [campo]
-        if campo == "nome_paciente":
-            variacoes_campo.extend(["paciente", "nome"])
-        elif campo == "numero_sus":
-            variacoes_campo.extend(["cartao_sus", "sus"])
-        elif campo == "data_nascimento":
-            variacoes_campo.extend(["nascimento"])
+        print(f"🔄 [Supabase] Atualizando ID '{id_query}' | Campo '{campo}' -> '{valor_formatado}'", flush=True)
+
+        payload = {campo: valor_formatado}
+
+        # 1. Tenta o UPDATE direto na tabela testando variações de colunas e tipos
+        colunas_id = ["numero_reg", "id", "id_regulacao"]
+        valores_id = [id_query]
+        if num_int is not None and num_str not in valores_id:
+            valores_id.append(num_str)
 
         for c_id in colunas_id:
             for v_id in valores_id:
-                for c_campo in variacoes_campo:
-                    try:
-                        resposta = supabase.table(TABELA_SUPABASE).update({c_campo: valor}).eq(c_id, v_id).execute()
-                        if resposta and resposta.data:
-                            return True
-                    except Exception:
-                        continue
+                try:
+                    res = supabase.table(TABELA_SUPABASE).update(payload).eq(c_id, v_id).select().execute()
+                    if res and res.data and len(res.data) > 0:
+                        print(f"✅ [Supabase] Update realizado com sucesso por '{c_id}'!", flush=True)
+                        return True
+                except Exception:
+                    continue
 
+        # 2. Se a linha não existia para update, executa o UPSERT (cria a linha com os dados atualizados)
+        print("⚠️ [Supabase] Registro não localizado para update. Executando UPSERT...", flush=True)
+        dados_upsert = {
+            "numero_reg": id_query,
+            campo: valor_formatado
+        }
+        res_upsert = supabase.table(TABELA_SUPABASE).upsert(dados_upsert).select().execute()
+
+        if res_upsert and res_upsert.data:
+            print("✅ [Supabase] Registro criado e atualizado via UPSERT!", flush=True)
+            return True
+
+        print("❌ [Supabase] Nenhuma linha afetada na operação.", flush=True)
         return False
+
     except Exception as e:
-        print(f"❌ Erro ao atualizar campo {campo} no Supabase: {e}", flush=True)
+        print(f"❌ [Supabase ERROR] Falha ao atualizar {campo}: {str(e)}", flush=True)
         return False
 
 
@@ -167,7 +209,7 @@ async def excluir_regulacao_db(reg_id) -> bool:
         return False
     except Exception as e:
         print(f"❌ Erro ao excluir regulação do Supabase: {e}", flush=True)
-        return False    
+        return False
 
 
 async def registrar_consentimento_lgpd(user_id, aceito: bool = True) -> bool:
