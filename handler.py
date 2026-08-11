@@ -113,19 +113,35 @@ def _obter_valor(fonte, *chaves):
     return None
 
 
-def _mascarar_nome(nome: str) -> str:
-    if not nome or nome in ("N/A", "None", "NULO"):
+def mascarar_nome(nome: str) -> str:
+    """Mascara o nome do paciente exibindo apenas o primeiro nome e a inicial do último sobrenome."""
+    if not nome or str(nome).strip().upper() in ["N/A", "NONE", "", "NULO"]:
         return "N/A"
-    partes = nome.split()
-    if len(partes) <= 1:
-        return nome[0] + "***" if nome else "N/A"
-    return f"{partes[0]} {partes[-1][0]}***"
+    
+    partes = str(nome).strip().split()
+    if len(partes) == 1:
+        return f"{partes[0]}***"
+    
+    primeiro_nome = partes[0]
+    inicial_sobrenome = partes[-1][0].upper()
+    return f"{primeiro_nome} {inicial_sobrenome}***"
+
+
+def _mascarar_nome(nome: str) -> str:
+    return mascarar_nome(nome)
 
 
 def _mascarar_sus(sus: str) -> str:
     if not sus or len(sus) < 15:
         return sus or "N/A"
     return f"{sus[:3]}****{sus[-4:]}"
+
+
+def tratar_status_fms(status_fms: str) -> str:
+    """Garante que status indefinidos ou vazios retornem 'PENDENTE'."""
+    if not status_fms or str(status_fms).strip().upper() in ["", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO"]:
+        return "PENDENTE"
+    return str(status_fms).strip().upper()
 
 
 async def _buscar_regulacao_por_id_reg(numero_reg: str):
@@ -190,20 +206,16 @@ def _extrair_id_e_nome(reg: dict):
 
 def _extrair_status_limpo(resultado: dict, reg_db: dict = None) -> str:
     """Extrai o status priorizando a FMS e, em seguida, analisa o campo status_anterior do Supabase."""
-    # 1. Tenta pegar direto da varredura na FMS
     status_fms = _obter_valor(resultado, "status", "situacao")
     if status_fms and status_fms.upper() not in ("N/A", "NONE", ""):
         return status_fms.upper()
 
-    # 2. Tenta extrair do banco Supabase (colunas status_anterior / status_atual)
     status_db = _obter_valor(reg_db, "status_anterior", "status_atual", "status")
     if status_db:
-        # Busca padrões como "Situação: Agendada" ou "Situação: Vencida"
         match = re.search(r"(?:Situação|Status):\s*([^|]+)", status_db, re.IGNORECASE)
         if match:
             return match.group(1).strip().upper()
         
-        # Procura palavras-chave de situação conhecidas
         for st in ["AGENDADA", "VENCIDA", "CANCELADA", "PENDENTE"]:
             if st in status_db.upper():
                 return st
@@ -217,7 +229,6 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
     resultado = resultado or {}
     reg_db = reg_db or {}
 
-    # Status e Posição na fila
     status = _extrair_status_limpo(resultado, reg_db)
     posicao = (
         _obter_valor(resultado, "posicao", "posicao_fila") or 
@@ -225,32 +236,29 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         "Não informada"
     )
 
-    # Procedimento (Prioriza FMS, fallback para Supabase 'procedimento')
     procedimento = (
         _obter_valor(resultado, "procedimento") or 
         _obter_valor(reg_db, "procedimento") or 
         "N/A"
     )
 
-    # Paciente (Prioriza FMS, fallback para Supabase 'nome_paciente')
     paciente_raw = (
         _obter_valor(resultado, "paciente", "nome_paciente") or 
         _obter_valor(reg_db, "nome_paciente", "paciente", "nome") or 
         "N/A"
     )
 
-    # Cartão SUS (Prioriza FMS, fallback para Supabase 'numero_sus')
     sus_raw = (
         _obter_valor(resultado, "cartao_sus", "numero_sus") or 
         _obter_valor(reg_db, "numero_sus", "cartao_sus") or 
         "N/A"
     )
 
-    paciente_mascarado = _mascarar_nome(paciente_raw)
+    paciente_mascarado = mascarar_nome(paciente_raw)
     sus_mascarado = _mascarar_sus(sus_raw)
 
     msg = (
-        f"📋 <b>STATUS DA REGULAÇÃO</b>\n"
+        f"📋 <b>STATUS DA REGULAÇÃO</b>\n\n"
         f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
         f"<b>Cartão SUS:</b> <code>{escape(sus_mascarado)}</code>\n"
         f"<b>Paciente:</b> {escape(paciente_mascarado)}\n"
@@ -323,6 +331,8 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
     """Consulta todas as regulações do usuário trazendo dados da FMS combinados com o Supabase."""
     user_id = update.effective_user.id
     regulacoes = buscar_regulacoes_por_usuario(user_id)
+    if hasattr(regulacoes, "__await__"):
+        regulacoes = await regulacoes
 
     if not regulacoes:
         await update.message.reply_text(
@@ -346,7 +356,6 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
             logger.error(f"Erro ao consultar regulação {num_reg} na FMS: {e}")
             resultado = {"sucesso": False}
 
-        # Cruza informações da FMS e do registro correspondente no Supabase
         msg_html = _montar_msg_html(num_reg, resultado, reg)
         await update.message.reply_text(msg_html, parse_mode="HTML")
 
@@ -358,33 +367,51 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
 
 
-# Verifique se estes imports estão no topo do handler.py:
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes, ConversationHandler
+async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inicia a consulta específica exibindo os botões inline com nomes mascarados."""
+    try:
+        user_id = update.effective_user.id
+        regulacoes = buscar_regulacoes_por_usuario(user_id)
+        if hasattr(regulacoes, "__await__"):
+            regulacoes = await regulacoes
 
-# 1. Função Utilitária de Mascaramento
-def mascarar_nome(nome: str) -> str:
-    """Mascara o nome do paciente exibindo apenas o primeiro nome e a inicial do último sobrenome."""
-    if not nome or str(nome).strip().upper() in ["N/A", "NONE", ""]:
-        return "N/A"
-    
-    partes = str(nome).strip().split()
-    if len(partes) == 1:
-        return f"{partes[0]}***"
-    
-    primeiro_nome = partes[0]
-    inicial_sobrenome = partes[-1][0].upper()
-    return f"{primeiro_nome} {inicial_sobrenome}***"
+        if not regulacoes:
+            msg_sem_dados = "⚠️ Nenhuma regulação cadastrada encontrada para o seu usuário."
+            if update.message:
+                await update.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
+            elif update.callback_query:
+                await update.callback_query.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
+            return ConversationHandler.END
+
+        teclado_botoes = []
+        for reg in regulacoes:
+            num_reg, nome_bruto = _extrair_id_e_nome(reg)
+            nome_exibicao = mascarar_nome(nome_bruto)
+            texto_botao = f"📄 {num_reg} - {nome_exibicao}"
+            teclado_botoes.append([InlineKeyboardButton(texto_botao, callback_data=f"ver_esp_{num_reg}")])
+
+        teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
+        reply_markup = InlineKeyboardMarkup(teclado_botoes)
+
+        msg = (
+            "🔍 <b>Selecione qual regulação deseja verificar:</b>\n"
+            "<i>Ou se preferir, digite o número do ID da regulação abaixo:</i>"
+        )
+
+        if update.message:
+            await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="HTML")
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode="HTML")
+
+        return CONSULTAR_ID
+
+    except Exception as e:
+        logger.error(f"Erro em iniciar_verificar_especifico: {e}")
+        if update.message:
+            await update.message.reply_text("⚠️ Ocorreu um erro ao carregar suas regulações.")
+        return ConversationHandler.END
 
 
-def tratar_status_fms(status_fms: str) -> str:
-    """Garante que status indefinidos ou vazios retornem 'PENDENTE'."""
-    if not status_fms or str(status_fms).strip().upper() in ["", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO"]:
-        return "PENDENTE"
-    return str(status_fms).strip().upper()
-
-
-# 2. Função de Inicialização da Verificação Específica (COM TRATAMENTO DE ERROS)
 async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processa a seleção do ID da regulação (via botão inline ou mensagem de texto)."""
     try:
@@ -397,124 +424,60 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
             if data == "cancelar_ver_esp":
                 await query.edit_message_text("❌ Consulta cancelada.")
+                await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
                 return ConversationHandler.END
 
             if data.startswith("ver_esp_"):
                 num_reg = data.replace("ver_esp_", "").strip()
 
         elif update.message and update.message.text:
-            texto = update.message.text.strip()
-            if texto == "🚫 Cancelar Operação" or "cancelar" in texto.lower():
-                await update.message.reply_text("❌ Consulta cancelada.", reply_markup=TECLADO_MENU)
+            if await verificar_se_e_menu_e_executar(update, context):
                 return ConversationHandler.END
-            num_reg = texto
+
+            texto = update.message.text.strip()
+            num_reg = re.sub(r"\D", "", texto)
 
         if not num_reg:
-            msg_erro = "⚠️ Não foi possível identificar o ID da regulação. Tente novamente."
+            msg_erro = "⚠️ Não foi possível identificar o ID da regulação. Digite apenas os números:"
             if query:
                 await query.edit_message_text(msg_erro)
             else:
-                await update.message.reply_text(msg_erro)
+                await update.message.reply_text(msg_erro, reply_markup=TECLADO_CANCELAR)
             return CONSULTAR_ID
 
-        # Mensagem de aguarde
-        msg_espera = f"🔍 Consultando a regulação `{num_reg}` na FMS..."
+        msg_espera_text = f"⌛ <b>Consultando a regulação</b> <code>{escape(num_reg)}</code> na FMS..."
         if query:
-            msg_status = await query.message.reply_text(msg_espera, parse_mode="Markdown")
+            msg_status = await query.message.reply_text(msg_espera_text, parse_mode="HTML")
         else:
-            msg_status = await update.message.reply_text(msg_espera, parse_mode="Markdown")
+            msg_status = await update.message.reply_text(msg_espera_text, parse_mode="HTML")
 
-        # Busca os dados no Supabase para montar a consulta
-        reg_dados = obter_regulacao_por_numero(num_reg)
+        reg_db = await _buscar_regulacao_por_id_reg(num_reg)
+        try:
+            resultado = await consultar_status_fms(num_reg)
+        except Exception as e:
+            logger.error(f"Erro ao consultar FMS para {num_reg}: {e}")
+            resultado = {"sucesso": False}
 
-        if not reg_dados:
-            await msg_status.edit_text(f"⚠️ Regulação `{num_reg}` não encontrada no sistema.")
-            return ConversationHandler.END
+        msg_html = _montar_msg_html(num_reg, resultado, reg_db)
 
-        # Formatação do nome mascarado para exibição no resultado
-        nome_bruto = reg_dados.get("nome_paciente") or reg_dados.get("paciente") or "Paciente"
-        paciente_mascarado = mascarar_nome(nome_bruto)
-        
-        cartao_sus = reg_dados.get("cartao_sus") or reg_dados.get("sus") or "N/A"
-        cartao_sus_mascarado = f"{cartao_sus[:3]}******{cartao_sus[-3:]}" if len(str(cartao_sus)) >= 6 else cartao_sus
-        
-        procedimento = reg_dados.get("procedimento") or "EXAME/CONSULTA"
-        
-        # Define o status (com fallback para PENDENTE caso não haja retorno da FMS)
-        status_fms = reg_dados.get("status")
-        status_final = tratar_status_fms(status_fms)
-        posicao_fila = reg_dados.get("posicao_fila") or "Informada no Portal"
+        try:
+            await msg_status.delete()
+        except Exception:
+            pass
 
-        mensagem_resultado = (
-            f"📋 **STATUS DA REGULAÇÃO**\n\n"
-            f"**ID Regulação:** `{num_reg}`\n"
-            f"**Cartão SUS:** `{cartao_sus_mascarado}`\n"
-            f"**Paciente:** `{paciente_mascarado}`\n"
-            f"**Procedimento:** `{procedimento}`\n"
-            f"**Status:** `{status_final}`\n"
-            f"**Posição na Fila:** `{posicao_fila}`"
-        )
+        if query:
+            await query.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
+        else:
+            await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
 
-        await msg_status.edit_text(mensagem_resultado, parse_mode="Markdown")
+        context.user_data.clear()
         return ConversationHandler.END
 
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO EM processar_verificar_especifico: {e}", flush=True)
+        logger.error(f"Erro em processar_verificar_especifico: {e}")
         if update.message:
-            await update.message.reply_text("⚠️ Ocorreu um erro ao processar a consulta.")
+            await update.message.reply_text("⚠️ Ocorreu um erro ao processar a consulta.", reply_markup=TECLADO_MENU)
         return ConversationHandler.END
-
-        numero_reg = query.data.replace("ver_esp_", "")
-        msg_espera = await query.message.reply_text(
-            f"⌛ <b>Aguardando consulta...</b>\nBuscando dados da regulação <code>{escape(numero_reg)}</code> na FMS e no Supabase.",
-            parse_mode="HTML"
-        )
-
-    # 2. Número digitado no chat
-    else:
-        if await verificar_se_e_menu_e_executar(update, context):
-            return ConversationHandler.END
-
-        texto = update.message.text.strip()
-        numero_reg = re.sub(r"\D", "", texto)
-
-        if not numero_reg:
-            await update.message.reply_text(
-                "⚠️ Por favor, digite apenas os números da regulação:", 
-                reply_markup=TECLADO_CANCELAR
-            )
-            return CONSULTAR_ID
-
-        msg_espera = await update.message.reply_text(
-            f"⌛ <b>Aguardando consulta...</b>\nBuscando dados da regulação <code>{escape(numero_reg)}</code> na FMS e no Supabase.",
-            parse_mode="HTML"
-        )
-
-    # 3. Busca no Supabase + Varredura FMS
-    reg_db = await _buscar_regulacao_por_id_reg(numero_reg)
-    try:
-        resultado = await consultar_status_fms(numero_reg)
-    except Exception as e:
-        logger.error(f"Erro ao consultar FMS para {numero_reg}: {e}")
-        resultado = {"sucesso": False, "mensagem": "Ocorreu uma falha ao conectar com a FMS."}
-
-    # Apaga a mensagem temporária
-    try:
-        await msg_espera.delete()
-    except Exception:
-        pass
-
-    # 4. Formata e exibe os dados combinados
-    msg_html = _montar_msg_html(numero_reg, resultado, reg_db)
-
-    if query:
-        await query.edit_message_text(msg_html, parse_mode="HTML")
-        await query.message.reply_text("O que deseja fazer agora?", reply_markup=TECLADO_MENU)
-    else:
-        await update.message.reply_text(msg_html, parse_mode="HTML", reply_markup=TECLADO_MENU)
-
-    context.user_data.clear()
-    return ConversationHandler.END
 
 # --------------------------------------------------
 # FLUXO DE CADASTRO MANUAL
@@ -673,6 +636,8 @@ async def finalizar_cadastro(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     regulacoes = buscar_regulacoes_por_usuario(user_id)
+    if hasattr(regulacoes, "__await__"):
+        regulacoes = await regulacoes
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui regulações cadastradas para corrigir.", reply_markup=TECLADO_MENU)
@@ -757,6 +722,8 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     regulacoes = buscar_regulacoes_por_usuario(user_id)
+    if hasattr(regulacoes, "__await__"):
+        regulacoes = await regulacoes
 
     if not regulacoes:
         await update.message.reply_text("⚠️ Você não possui nenhuma regulação cadastrada para excluir.", reply_markup=TECLADO_MENU)
