@@ -717,22 +717,75 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    novo_valor = update.message.text.strip()
+    texto_digitado = update.message.text.strip()
     reg_id = context.user_data.get("corr_reg_id")
     campo = context.user_data.get("corr_campo")
 
     if not reg_id or not campo:
-        await update.message.reply_text("⚠️ Sessão expirada ou dados inválidos. Tente o processo novamente.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "⚠️ Sessão expirada ou dados inválidos. Tente o processo novamente.", 
+            reply_markup=TECLADO_MENU
+        )
         context.user_data.clear()
         return ConversationHandler.END
 
-    res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
-    sucesso = await res if hasattr(res, "__await__") else res
+    novo_valor = texto_digitado
+
+    # --------------------------------------------------
+    # TRATAMENTO DE DATA (Apenas números -> DD/MM/AAAA -> YYYY-MM-DD)
+    # --------------------------------------------------
+    if campo == "data_nascimento":
+        # Extrai apenas os números digitados
+        apenas_numeros = re.sub(r"\D", "", texto_digitado)
+        
+        if len(apenas_numeros) != 8:
+            await update.message.reply_text(
+                "⚠️ <b>Data inválida!</b>\n"
+                "Digite apenas os 8 números da data (ex: <b>18091977</b>):",
+                parse_mode="HTML"
+            )
+            return AGUARDAR_NOVO_VALOR
+        
+        # Insere automaticamente as barras no formato DD/MM/AAAA
+        data_com_barras = f"{apenas_numeros[:2]}/{apenas_numeros[2:4]}/{apenas_numeros[4:]}"
+        
+        try:
+            # Converte para YYYY-MM-DD (formato aceito pelo Supabase/Postgres)
+            novo_valor = datetime.strptime(data_com_barras, "%d/%m/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            await update.message.reply_text(
+                "⚠️ <b>Data inexistente!</b> Verifique o dia e o mês e digite novamente (ex: 18091977):",
+                parse_mode="HTML"
+            )
+            return AGUARDAR_NOVO_VALOR
+
+    elif campo in ["numero_sus", "celular", "numero_reg"]:
+        novo_valor = re.sub(r"\D", "", texto_digitado)
+        if not novo_valor:
+            await update.message.reply_text("⚠️ Valor inválido! Digite apenas números:")
+            return AGUARDAR_NOVO_VALOR
+
+    # --------------------------------------------------
+    # PERSISTÊNCIA E CONCLUSÃO NO BANCO DE DADOS
+    # --------------------------------------------------
+    try:
+        res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
+        sucesso = await res if hasattr(res, "__await__") else res
+    except Exception as e:
+        logger.error(f"Erro ao atualizar campo {campo} no banco: {e}")
+        sucesso = False
 
     if sucesso:
-        await update.message.reply_text("✅ Campo atualizado com sucesso no Supabase!", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "✅ <b>Registro atualizado com sucesso no banco de dados!</b>", 
+            parse_mode="HTML", 
+            reply_markup=TECLADO_MENU
+        )
     else:
-        await update.message.reply_text("❌ Falha ao atualizar o registro no banco de dados.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text(
+            "❌ Falha ao atualizar o registro no banco de dados. Tente novamente mais tarde.", 
+            reply_markup=TECLADO_MENU
+        )
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -793,13 +846,18 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
 
     if query.data == "conf_excl_sim":
         reg_id = context.user_data.get("excl_reg_id")
-        res = excluir_regulacao_db(reg_id)
-        sucesso = await res if hasattr(res, "__await__") else res
+        
+        try:
+            res = excluir_regulacao_db(reg_id)
+            sucesso = await res if hasattr(res, "__await__") else res
+        except Exception as e:
+            logger.error(f"Erro ao excluir registro {reg_id} do banco: {e}")
+            sucesso = False
 
         if sucesso:
-            await query.edit_message_text("✅ Regulação excluída com sucesso!")
+            await query.edit_message_text("✅ <b>Regulação excluída com sucesso do banco de dados!</b>", parse_mode="HTML")
         else:
-            await query.edit_message_text("❌ Ocorreu um erro ao tentar excluir a regulação.")
+            await query.edit_message_text("❌ Ocorreu um erro ao tentar excluir a regulação do banco de dados.")
     else:
         await query.edit_message_text("❌ Exclusão cancelada.")
 

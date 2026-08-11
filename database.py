@@ -94,7 +94,8 @@ async def atualizar_campo_regulacao(reg_id, campo: str, valor) -> bool:
         num_int = int(num_str) if num_str.isdigit() else None
 
         for col in ["numero_reg", "id"]:
-            for val in [num_str, num_int] if num_int is not None else [num_str]:
+            valores_busca = [num_str, num_int] if num_int is not None else [num_str]
+            for val in valores_busca:
                 try:
                     resposta = supabase.table(TABELA_SUPABASE).update({campo: valor}).eq(col, val).execute()
                     if resposta and resposta.data:
@@ -135,22 +136,24 @@ def deletar_regulacao_por_id(chat_id, numero_reg):
 
 
 async def excluir_regulacao_db(reg_id) -> bool:
-    """Exclui uma regulação apenas pelo número de regulação ou id no Supabase."""
+    """Exclui uma regulação do Supabase buscando tanto pelo id quanto pelo numero_reg."""
     try:
         num_str = str(reg_id).strip()
         num_int = int(num_str) if num_str.isdigit() else None
 
         for col in ["numero_reg", "id"]:
-            for val in [num_str, num_int] if num_int is not None else [num_str]:
+            valores_busca = [num_str, num_int] if num_int is not None else [num_str]
+            for val in valores_busca:
                 try:
                     resposta = supabase.table(TABELA_SUPABASE).delete().eq(col, val).execute()
                     if resposta and resposta.data:
                         return True
                 except Exception:
                     continue
+
         return False
     except Exception as e:
-        print(f"❌ Erro ao excluir regulação {reg_id}: {e}", flush=True)
+        print(f"❌ Erro ao excluir regulação do Supabase: {e}", flush=True)
         return False
 
 
