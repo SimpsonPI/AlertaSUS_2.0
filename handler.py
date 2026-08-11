@@ -677,13 +677,13 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     teclado = []
+    # Loop para adicionar cada regulação encontrada
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
-        db_id = r.get("id") or r.get("id_regulacao") or num
+        teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{num}")])
 
-# ✅ Como deve ficar:
-teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{num}")])
-teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
+    # Botão cancelar adicionado apenas uma vez ao final da lista
+    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
     await update.message.reply_text("✏️ <b>Selecione qual regulação deseja corrigir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
     return SELECIONAR_REGULACAO
