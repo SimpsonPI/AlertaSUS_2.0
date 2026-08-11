@@ -141,16 +141,32 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str):
 
 
 async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Verifica se o usuário clicou em uma opção do menu durante um fluxo de conversação."""
+    """Verifica se o usuário clicou em uma opção do menu ou cancelamento durante um fluxo."""
     if not update.message or not update.message.text:
         return False
+
     texto = update.message.text.strip()
     opcoes_menu = [
         "📋 Verificar Todas", "🔍 Verificar Específico", 
         "➕ Cadastrar Nova", "✏️ Corrigir ID", 
         "🗑️ Excluir Regulação", "ℹ️ Ajuda", "🚫 Cancelar Operação"
     ]
-    return texto in opcoes_menu
+
+    if texto in opcoes_menu:
+        context.user_data.clear()
+        if texto == "🚫 Cancelar Operação" or "cancelar" in texto.lower():
+            await update.message.reply_text(
+                "❌ Operação cancelada com sucesso.",
+                reply_markup=TECLADO_MENU
+            )
+        else:
+            await update.message.reply_text(
+                "Saindo da operação atual...",
+                reply_markup=TECLADO_MENU
+            )
+        return True
+
+    return False
 
 
 def _extrair_id_e_nome(reg: dict):
