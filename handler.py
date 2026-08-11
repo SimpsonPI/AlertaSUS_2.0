@@ -377,53 +377,91 @@ def mascarar_nome(nome: str) -> str:
     return f"{primeiro_nome} {inicial_sobrenome}***"
 
 
-# 2. Função de Inicialização da Verificação Específica (COM TRATAMENTO DE ERROS)
-async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Inicia a consulta específica exibindo os botões inline com nomes mascarados."""
-    try:
-        user_id = update.effective_user.id
-        
-        # Busca no Supabase
-        regulacoes = buscar_regulacoes_por_chat_id(user_id)
+def tratar_status_fms(status_fms: str) -> str:
+    """Garante que status indefinidos ou vazios retornem 'PENDENTE'."""
+    if not status_fms or str(status_fms).strip().upper() in ["", "N/A", "NONE", "SEM STATUS", "NÃO INFORMADO"]:
+        return "PENDENTE"
+    return str(status_fms).strip().upper()
 
-        if not regulacoes:
-            msg_sem_dados = "⚠️ Nenhuma regulação cadastrada encontrada para o seu usuário."
-            if update.message:
-                await update.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
-            elif update.callback_query:
-                await update.callback_query.message.reply_text(msg_sem_dados, reply_markup=TECLADO_MENU)
+
+# 2. Função de Inicialização da Verificação Específica (COM TRATAMENTO DE ERROS)
+async def processar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processa a seleção do ID da regulação (via botão inline ou mensagem de texto)."""
+    try:
+        query = update.callback_query
+        num_reg = None
+
+        if query:
+            await query.answer()
+            data = query.data
+
+            if data == "cancelar_ver_esp":
+                await query.edit_message_text("❌ Consulta cancelada.")
+                return ConversationHandler.END
+
+            if data.startswith("ver_esp_"):
+                num_reg = data.replace("ver_esp_", "").strip()
+
+        elif update.message and update.message.text:
+            texto = update.message.text.strip()
+            if texto == "🚫 Cancelar Operação" or "cancelar" in texto.lower():
+                await update.message.reply_text("❌ Consulta cancelada.", reply_markup=TECLADO_MENU)
+                return ConversationHandler.END
+            num_reg = texto
+
+        if not num_reg:
+            msg_erro = "⚠️ Não foi possível identificar o ID da regulação. Tente novamente."
+            if query:
+                await query.edit_message_text(msg_erro)
+            else:
+                await update.message.reply_text(msg_erro)
+            return CONSULTAR_ID
+
+        # Mensagem de aguarde
+        msg_espera = f"🔍 Consultando a regulação `{num_reg}` na FMS..."
+        if query:
+            msg_status = await query.message.reply_text(msg_espera, parse_mode="Markdown")
+        else:
+            msg_status = await update.message.reply_text(msg_espera, parse_mode="Markdown")
+
+        # Busca os dados no Supabase para montar a consulta
+        reg_dados = obter_regulacao_por_numero(num_reg)
+
+        if not reg_dados:
+            await msg_status.edit_text(f"⚠️ Regulação `{num_reg}` não encontrada no sistema.")
             return ConversationHandler.END
 
-        teclado_botoes = []
-        for reg in regulacoes:
-            num_reg = reg.get("numero_reg") or reg.get("id") or "N/A"
-            nome_bruto = reg.get("nome_paciente") or reg.get("paciente") or reg.get("nome") or ""
-            
-            # Aplica a máscara no nome
-            nome_exibicao = mascarar_nome(nome_bruto)
-            
-            texto_botao = f"📄 {num_reg} - {nome_exibicao}"
-            teclado_botoes.append([InlineKeyboardButton(texto_botao, callback_data=f"ver_esp_{num_reg}")])
+        # Formatação do nome mascarado para exibição no resultado
+        nome_bruto = reg_dados.get("nome_paciente") or reg_dados.get("paciente") or "Paciente"
+        paciente_mascarado = mascarar_nome(nome_bruto)
+        
+        cartao_sus = reg_dados.get("cartao_sus") or reg_dados.get("sus") or "N/A"
+        cartao_sus_mascarado = f"{cartao_sus[:3]}******{cartao_sus[-3:]}" if len(str(cartao_sus)) >= 6 else cartao_sus
+        
+        procedimento = reg_dados.get("procedimento") or "EXAME/CONSULTA"
+        
+        # Define o status (com fallback para PENDENTE caso não haja retorno da FMS)
+        status_fms = reg_dados.get("status")
+        status_final = tratar_status_fms(status_fms)
+        posicao_fila = reg_dados.get("posicao_fila") or "Informada no Portal"
 
-        teclado_botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_ver_esp")])
-        reply_markup = InlineKeyboardMarkup(teclado_botoes)
-
-        msg = (
-            "🔍 *Selecione qual regulação deseja verificar:*\n"
-            "_Ou se preferir, digite o número do ID da regulação abaixo:_"
+        mensagem_resultado = (
+            f"📋 **STATUS DA REGULAÇÃO**\n\n"
+            f"**ID Regulação:** `{num_reg}`\n"
+            f"**Cartão SUS:** `{cartao_sus_mascarado}`\n"
+            f"**Paciente:** `{paciente_mascarado}`\n"
+            f"**Procedimento:** `{procedimento}`\n"
+            f"**Status:** `{status_final}`\n"
+            f"**Posição na Fila:** `{posicao_fila}`"
         )
 
-        if update.message:
-            await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
-        elif update.callback_query:
-            await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode="Markdown")
-
-        return CONSULTAR_ID
+        await msg_status.edit_text(mensagem_resultado, parse_mode="Markdown")
+        return ConversationHandler.END
 
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO EM iniciar_verificar_especifico: {e}", flush=True)
+        print(f"❌ ERRO CRÍTICO EM processar_verificar_especifico: {e}", flush=True)
         if update.message:
-            await update.message.reply_text("⚠️ Ocorreu um erro ao carregar suas regulações. Tente novamente em instantes.")
+            await update.message.reply_text("⚠️ Ocorreu um erro ao processar a consulta.")
         return ConversationHandler.END
 
         numero_reg = query.data.replace("ver_esp_", "")
