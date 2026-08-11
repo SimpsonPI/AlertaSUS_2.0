@@ -88,20 +88,33 @@ async def salvar_regulacao(dados: dict) -> bool:
 
 
 async def atualizar_campo_regulacao(reg_id, campo: str, valor) -> bool:
-    """Atualiza dinamicamente um campo específico no Supabase."""
+    """Atualiza dinamicamente um campo específico no Supabase testando IDs e nomes de colunas alternativos."""
     try:
         num_str = str(reg_id).strip()
         num_int = int(num_str) if num_str.isdigit() else None
 
-        for col in ["numero_reg", "id"]:
-            valores_busca = [num_str, num_int] if num_int is not None else [num_str]
-            for val in valores_busca:
-                try:
-                    resposta = supabase.table(TABELA_SUPABASE).update({campo: valor}).eq(col, val).execute()
-                    if resposta and resposta.data:
-                        return True
-                except Exception:
-                    continue
+        # Lista de possíveis colunas para identificar o registro (Primary Key ou número do ID)
+        colunas_id = ["id", "numero_reg", "id_regulacao"]
+        valores_id = [num_str, num_int] if num_int is not None else [num_str]
+
+        # Lista de nomes alternativos de colunas para caso a tabela no Supabase use nomes ligeiramente diferentes
+        variacoes_campo = [campo]
+        if campo == "nome_paciente":
+            variacoes_campo.extend(["paciente", "nome"])
+        elif campo == "numero_sus":
+            variacoes_campo.extend(["cartao_sus", "sus"])
+        elif campo == "data_nascimento":
+            variacoes_campo.extend(["nascimento"])
+
+        for c_id in colunas_id:
+            for v_id in valores_id:
+                for c_campo in variacoes_campo:
+                    try:
+                        resposta = supabase.table(TABELA_SUPABASE).update({c_campo: valor}).eq(c_id, v_id).execute()
+                        if resposta and resposta.data:
+                            return True
+                    except Exception:
+                        continue
 
         return False
     except Exception as e:
@@ -154,7 +167,7 @@ async def excluir_regulacao_db(reg_id) -> bool:
         return False
     except Exception as e:
         print(f"❌ Erro ao excluir regulação do Supabase: {e}", flush=True)
-        return False
+        return False    
 
 
 async def registrar_consentimento_lgpd(user_id, aceito: bool = True) -> bool:

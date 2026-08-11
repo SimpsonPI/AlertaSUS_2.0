@@ -719,9 +719,9 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     texto_digitado = update.message.text.strip()
     reg_id = context.user_data.get("corr_reg_id")
-    campo = context.user_data.get("corr_campo")
+    campo_raw = context.user_data.get("corr_campo")
 
-    if not reg_id or not campo:
+    if not reg_id or not campo_raw:
         await update.message.reply_text(
             "⚠️ Sessão expirada ou dados inválidos. Tente o processo novamente.", 
             reply_markup=TECLADO_MENU
@@ -729,28 +729,35 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data.clear()
         return ConversationHandler.END
 
+    # Mapeamento do nome do campo interno para a coluna real do Supabase
+    MAPA_COLUNAS = {
+        "numero_sus": "numero_sus",
+        "nome_paciente": "nome_paciente",
+        "celular": "celular",
+        "data_nascimento": "data_nascimento",
+        "numero_reg": "numero_reg",
+        "cbo": "cbo",
+        "procedimento": "procedimento"
+    }
+
+    campo = MAPA_COLUNAS.get(campo_raw, campo_raw)
     novo_valor = texto_digitado
 
     # --------------------------------------------------
-    # TRATAMENTO DE DATA (Apenas números -> DD/MM/AAAA -> YYYY-MM-DD)
+    # FORMATAÇÃO E SANITIZAÇÃO DE DADOS
     # --------------------------------------------------
     if campo == "data_nascimento":
-        # Extrai apenas os números digitados
         apenas_numeros = re.sub(r"\D", "", texto_digitado)
-        
         if len(apenas_numeros) != 8:
             await update.message.reply_text(
-                "⚠️ <b>Data inválida!</b>\n"
-                "Digite apenas os 8 números da data (ex: <b>18091977</b>):",
+                "⚠️ <b>Data inválida!</b>\nDigite apenas os 8 números da data (ex: <b>18091977</b>):",
                 parse_mode="HTML"
             )
             return AGUARDAR_NOVO_VALOR
         
-        # Insere automaticamente as barras no formato DD/MM/AAAA
         data_com_barras = f"{apenas_numeros[:2]}/{apenas_numeros[2:4]}/{apenas_numeros[4:]}"
-        
         try:
-            # Converte para YYYY-MM-DD (formato aceito pelo Supabase/Postgres)
+            # Converte para YYYY-MM-DD para compatibilidade com a coluna DATE do PostgreSQL
             novo_valor = datetime.strptime(data_com_barras, "%d/%m/%Y").strftime("%Y-%m-%d")
         except ValueError:
             await update.message.reply_text(
@@ -766,13 +773,13 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return AGUARDAR_NOVO_VALOR
 
     # --------------------------------------------------
-    # PERSISTÊNCIA E CONCLUSÃO NO BANCO DE DADOS
+    # EJECUÇÃO E PERSISTÊNCIA NO BANCO
     # --------------------------------------------------
     try:
-        res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
-        sucesso = await res if hasattr(res, "__await__") else res
+        # Await direto para garantir a resolução da promessa no Supabase
+        sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
     except Exception as e:
-        logger.error(f"Erro ao atualizar campo {campo} no banco: {e}")
+        logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
         sucesso = False
 
     if sucesso:
