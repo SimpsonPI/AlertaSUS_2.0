@@ -98,9 +98,43 @@ TECLADO_CANCELAR = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# Textos dos botões do menu principal + botão de cancelar.
+# Usados para detectar quando o usuário aperta um botão do menu
+# enquanto está no meio de um formulário (ex: cadastro, correção).
+BOTOES_MENU = {
+    "📋 Verificar Todas",
+    "🔍 Verificar Específico",
+    "➕ Cadastrar Nova",
+    "✏️ Corrigir ID",
+    "🗑️ Excluir Regulação",
+    "ℹ️ Ajuda",
+    "🚫 Cancelar Operação",
+}
+
 # --------------------------------------------------
 # FUNÇÕES AUXILIARES E FORMATADORES
 # --------------------------------------------------
+
+async def verificar_se_e_menu_e_executar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Verifica se o texto recebido é um dos botões do menu principal
+    (ou o botão de cancelar), em vez de uma resposta válida do formulário.
+
+    Isto evita o bug em que, ao apertar um botão do menu no meio de uma
+    conversa (ex: cadastro), o texto do botão era tratado como resposta
+    inválida do campo atual, gerando um loop de erro sem saída.
+
+    Se o texto corresponder a um botão do menu: cancela a operação atual
+    e mostra o menu principal novamente, retornando True.
+    Caso contrário, retorna False e o fluxo normal do formulário continua.
+    """
+    texto = update.message.text.strip() if update.message and update.message.text else ""
+
+    if texto in BOTOES_MENU:
+        await cancelar_operacao(update, context)
+        return True
+
+    return False
 
 def _extrair_id_e_nome(reg: dict):
     """
@@ -307,6 +341,8 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
 
         num_regulacao = query.data.replace("ver_esp_", "")
     else:
+        if await verificar_se_e_menu_e_executar(update, context):
+            return ConversationHandler.END
         num_regulacao = update.message.text.strip()
 
     try:
@@ -360,6 +396,9 @@ async def iniciar_cadastro_manual(update: Update, context: ContextTypes.DEFAULT_
 
 async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe e valida o número do Cartão SUS."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     sus = update.message.text.strip()
     
     if not re.match(r'^\d{14}$', sus):
@@ -381,6 +420,9 @@ async def receber_sus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o nome do paciente."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     context.user_data["nome"] = update.message.text.strip()
     await update.message.reply_text(
         "✅ Nome registrado.\n\n"
@@ -393,6 +435,9 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o celular do paciente."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     context.user_data["celular"] = update.message.text.strip()
     await update.message.reply_text(
         "✅ Celular registrado.\n\n"
@@ -405,6 +450,9 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe a data de nascimento."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     nascimento = update.message.text.strip()
     
     if not re.match(r'^\d{2}/\d{2}/\d{4}$', nascimento):
@@ -426,6 +474,9 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o número da regulação."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     context.user_data["numero_regulacao"] = update.message.text.strip()
     await update.message.reply_text(
         "✅ Número da regulação registrado.\n\n"
@@ -438,6 +489,9 @@ async def receber_regulacao(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o CBO."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     context.user_data["cbo"] = update.message.text.strip() or None
     await update.message.reply_text(
         "✅ CBO registrado.\n\n"
@@ -450,6 +504,9 @@ async def receber_cbo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recebe o procedimento."""
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     context.user_data["procedimento"] = update.message.text.strip()
     
     # Exibe confirmação LGPD
@@ -565,6 +622,9 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
     return AGUARDAR_NOVO_VALOR
 
 async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if await verificar_se_e_menu_e_executar(update, context):
+        return ConversationHandler.END
+
     novo_valor = update.message.text.strip()
     reg_id = context.user_data.get("corr_reg_id")
     campo = context.user_data.get("corr_campo")
