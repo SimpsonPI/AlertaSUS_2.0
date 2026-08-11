@@ -237,8 +237,6 @@ def _extrair_status_limpo(resultado: dict, reg_db: dict = None) -> str:
     return "PENDENTE"
 
 
-from html import escape
-
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
     """Formata a mensagem em HTML exibindo detalhes completos de consulta marcada ou posição na fila."""
     resultado = resultado or {}
@@ -251,8 +249,8 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
     sus_raw = resultado.get("cartao_sus") or reg_db.get("numero_sus") or "N/A"
 
     # Aplica mascaramento de segurança
-    paciente_mascarado = mascarar_nome(paciente_raw) if 'mascarar_nome' in globals() else paciente_raw
-    sus_mascarado = _mascarar_sus(sus_raw) if '_mascarar_sus' in globals() else sus_raw
+    paciente_mascarado = mascarar_nome(paciente_raw)
+    sus_mascarado = _mascarar_sus(sus_raw)
 
     # Status / Situação
     situacao = resultado.get("situacao") or resultado.get("status") or reg_db.get("status") or "PENDENTE"
@@ -677,12 +675,10 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     teclado = []
-    # Loop para adicionar cada regulação encontrada
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
         teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{num}")])
 
-    # Botão cancelar adicionado apenas uma vez ao final da lista
     teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
     await update.message.reply_text("✏️ <b>Selecione qual regulação deseja corrigir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
@@ -722,11 +718,9 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
         context.user_data.clear()
         return ConversationHandler.END
 
-    # Extrai o campo clicado
     campo = query.data.replace("corr_campo_", "").strip()
     context.user_data["corr_campo"] = campo
 
-    # Mapeamento de nomes amigáveis para exibição
     rotulos = {
         "data_nascimento": "Data de Nascimento",
         "celular": "Celular",
@@ -744,11 +738,9 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Função que recebe o texto digitado pelo usuário e salva no Supabase."""
     novo_valor = update.message.text.strip()
     
-    # Resgata o ID da regulação e o campo salvos no contexto do usuário
     reg_id = context.user_data.get("corr_reg_id") or context.user_data.get("reg_id")
     campo = context.user_data.get("corr_campo")
 
-    # Log para acompanhamento no Railway
     logger.info(f"Tentando atualizar no Supabase -> ID: {reg_id} | Campo: {campo} | Novo Valor: {novo_valor}")
 
     if not reg_id or not campo:
@@ -760,37 +752,9 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data.clear()
         return ConversationHandler.END
 
-    # --------------------------------------------------
-    # EXECUÇÃO E PERSISTÊNCIA NO BANCO
-    # --------------------------------------------------
     try:
-        sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
-    except Exception as e:
-        logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
-        sucesso = False
-
-    if sucesso:
-        await update.message.reply_text(
-            "✅ <b>Registro atualizado com sucesso no banco de dados!</b>", 
-            parse_mode="HTML", 
-            reply_markup=TECLADO_MENU
-        )
-    else:
-        await update.message.reply_text(
-            "❌ Falha ao atualizar o registro no banco de dados. Tente novamente mais tarde.", 
-            reply_markup=TECLADO_MENU
-        )
-
-    # Limpa os dados temporários da sessão
-    context.user_data.clear()
-    return ConversationHandler.END
-
-    # --------------------------------------------------
-    # EJECUÇÃO E PERSISTÊNCIA NO BANCO
-    # --------------------------------------------------
-    try:
-        # Await direto para garantir a resolução da promessa no Supabase
-        sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
+        res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
+        sucesso = await res if hasattr(res, "__await__") else res
     except Exception as e:
         logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
         sucesso = False
@@ -831,11 +795,9 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     teclado = []
     for r in regulacoes:
         num, nome = _extrair_id_e_nome(r)
-        db_id = r.get("id") or r.get("id_regulacao") or num        
+        teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{num}")])
 
-# ✅ Como deve ficar:
-teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{num}")])
-teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
+    teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
 
     await update.message.reply_text("🗑️ <b>Selecione qual regulação deseja excluir:</b>", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(teclado))
     return SELECIONAR_REGULACAO_EXCLUIR
