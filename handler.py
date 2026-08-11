@@ -238,44 +238,30 @@ def _extrair_status_limpo(resultado: dict, reg_db: dict = None) -> str:
 
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
-    """Formata os dados da regulação cruzando dados ao vivo da FMS com a tabela do Supabase."""
+    """Formata os dados da regulação exibindo detalhes completos de agendamento se existirem."""
     resultado = resultado or {}
     reg_db = reg_db or {}
 
     status = _extrair_status_limpo(resultado, reg_db)
-    posicao = (
-        _obter_valor(resultado, "posicao", "posicao_fila") or 
-        _obter_valor(reg_db, "posicao", "posicao_fila") or 
-        "Não informada"
-    )
-
-    cbo = (
-        _obter_valor(resultado, "cbo") or 
-        _obter_valor(reg_db, "cbo") or 
-        "N/A"
-    )
-
-    procedimento = (
-        _obter_valor(resultado, "procedimento") or 
-        _obter_valor(reg_db, "procedimento") or 
-        "N/A"
-    )
-
-    paciente_raw = (
-        _obter_valor(resultado, "paciente", "nome_paciente") or 
-        _obter_valor(reg_db, "nome_paciente", "paciente", "nome") or 
-        "N/A"
-    )
-
-    sus_raw = (
-        _obter_valor(resultado, "cartao_sus", "numero_sus") or 
-        _obter_valor(reg_db, "numero_sus", "cartao_sus") or 
-        "N/A"
-    )
+    
+    # Dados básicos
+    cbo = _obter_valor(resultado, "cbo") or _obter_valor(reg_db, "cbo") or "N/A"
+    procedimento = _obter_valor(resultado, "procedimento") or _obter_valor(reg_db, "procedimento") or "N/A"
+    paciente_raw = _obter_valor(resultado, "paciente", "nome_paciente") or _obter_valor(reg_db, "nome_paciente", "paciente") or "N/A"
+    sus_raw = _obter_valor(resultado, "cartao_sus", "numero_sus") or _obter_valor(reg_db, "numero_sus") or "N/A"
 
     paciente_mascarado = mascarar_nome(paciente_raw)
     sus_mascarado = _mascarar_sus(sus_raw)
 
+    # Extração dos dados específicos de agendamento (capturados pelo scraper)
+    data_consulta = _obter_valor(resultado, "data_consulta", "data_hora")
+    autorizacao = _obter_valor(resultado, "autorizacao", "codigo_autorizacao")
+    estabelecimento = _obter_valor(resultado, "estabelecimento", "local")
+    endereco = _obter_valor(resultado, "endereco")
+    telefone = _obter_valor(resultado, "telefone", "telefones")
+    aviso_fms = _obter_valor(resultado, "aviso", "mensagem_alerta")
+
+    # Bloco Principal
     msg = (
         f"📋 <b>STATUS DA REGULAÇÃO</b>\n\n"
         f"<b>ID Regulação:</b> <code>{escape(str(numero_reg))}</code>\n"
@@ -284,8 +270,35 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         f"<b>CBO:</b> {escape(str(cbo))}\n"
         f"<b>Procedimento:</b> {escape(str(procedimento))}\n"
         f"<b>Status:</b> <b>{escape(str(status))}</b>\n"
-        f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
     )
+
+    # Se estiver agendado/marcado e houver dados de consulta
+    if data_consulta or estabelecimento:
+        msg += f"\n📅 <b>DADOS DO AGENDAMENTO</b>\n"
+        if data_consulta:
+            msg += f"<b>Data/Hora:</b> {escape(str(data_consulta))}\n"
+        if autorizacao:
+            msg += f"<b>Autorização:</b> <code>{escape(str(autorizacao))}</code>\n"
+
+        msg += f"\n🏥 <b>LOCAL DO ATENDIMENTO</b>\n"
+        if estabelecimento:
+            msg += f"<b>Local:</b> {escape(str(estabelecimento))}\n"
+        if endereco:
+            msg += f"<b>Endereço:</b> {escape(str(endereco))}\n"
+        if telefone:
+            msg += f"<b>Telefone:</b> {escape(str(telefone))}\n"
+
+        if aviso_fms:
+            msg += f"\n⚠️ <b>AVISO:</b> <i>{escape(str(aviso_fms))}</i>\n"
+    else:
+        # Se ainda estiver na fila de espera
+        posicao = (
+            _obter_valor(resultado, "posicao", "posicao_fila") or 
+            _obter_valor(reg_db, "posicao", "posicao_fila") or 
+            "Não informada"
+        )
+        msg += f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
+
     return msg
 
 
