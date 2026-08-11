@@ -2,25 +2,16 @@ import os
 import logging
 from telegram.ext import (
     Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ConversationHandler,
+    ConversationHandler, 
+    CommandHandler, 
+    MessageHandler, 
+    CallbackQueryHandler, 
     filters
 )
 
 from config import TELEGRAM_BOT_TOKEN
 
-# --------------------------------------------------
-# IMPORTAÇÃO ÚNICA A PARTIR DE handler.py
-# --------------------------------------------------
-# ATENÇÃO: O projeto usa um ÚNICO arquivo handler.py com
-# todas as funções, e não 6 módulos separados
-# (handlers_base, handlers_cadastro, etc.) que não existem
-# no repositório. É por isso que o Railway dava
-# "ModuleNotFoundError: No module named 'handlers_base'".
-# --------------------------------------------------
-
+# Importação centralizada de estados, handlers e utilitários a partir do handler.py
 from handler import (
     # Estados de conversação
     CONSULTAR_ID,
@@ -38,7 +29,7 @@ from handler import (
     ETAPA_PROCEDIMENTO,
     ETAPA_LGPD,
 
-    # Handlers base
+    # Handlers base e automação
     start,
     comando_ajuda,
     cancelar_operacao,
@@ -75,17 +66,17 @@ from handler import (
     cancelar_excluir,
 )
 
-# Configuração de Logs
+# Configuração do Sistema de Logs
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
 # --------------------------------------------------
-# CONVERSAÇÕES
+# HANDLERS DE CONVERSAÇÃO (CONVERSATION HANDLERS)
 # --------------------------------------------------
 
-# 1. Cadastro Interativo no Telegram
+# 1. Cadastro Interativo
 conv_cadastro = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), iniciar_cadastro_manual),
@@ -109,7 +100,7 @@ conv_cadastro = ConversationHandler(
     per_message=False
 )
 
-# 2. Verificar Específico (Com suporte a seleção por Botões Inline e digitação manual)
+# 2. Verificar Específico (Suporte a seleção por Botões Inline e digitação manual)
 conv_verificar_especifico = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("^🔍 Verificar Específico$"), iniciar_verificar_especifico),
@@ -154,7 +145,7 @@ conv_corrigir = ConversationHandler(
     per_message=False
 )
 
-# 4. Excluir Regulação Interativa por Botões
+# 4. Excluir Regulação Interativa
 conv_excluir = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("(?i)Excluir"), iniciar_excluir),
@@ -177,7 +168,7 @@ conv_excluir = ConversationHandler(
 )
 
 # --------------------------------------------------
-# MAIN
+# MAIN (INICIALIZAÇÃO DO BOT)
 # --------------------------------------------------
 
 def main():
