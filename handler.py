@@ -717,73 +717,71 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
     if query.data == "cancelar_corr":
         await query.edit_message_text("❌ Operação de correção cancelada.")
         await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        context.user_data.clear()
         return ConversationHandler.END
 
-    campo = query.data.replace("corr_campo_", "")
+    # Extrai o campo clicado
+    campo = query.data.replace("corr_campo_", "").strip()
     context.user_data["corr_campo"] = campo
 
-    await query.edit_message_text(f"Digite o novo valor para <b>{campo.replace('_', ' ').title()}</b>:", parse_mode="HTML")
+    # Mapeamento de nomes amigáveis para exibição
+    rotulos = {
+        "data_nascimento": "Data de Nascimento",
+        "celular": "Celular",
+        "nome_paciente": "Nome do Paciente",
+        "numero_sus": "Número do Cartão SUS",
+        "cbo": "CBO / Especialidade"
+    }
+    nome_exibicao = rotulos.get(campo, campo.replace("_", " ").title())
+
+    await query.edit_message_text(f"✏️ Digite o novo valor para <b>{nome_exibicao}</b>:", parse_mode="HTML")
     return AGUARDAR_NOVO_VALOR
 
 
 async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if await verificar_se_e_menu_e_executar(update, context):
-        return ConversationHandler.END
+    """Função que recebe o texto digitado pelo usuário e salva no Supabase."""
+    novo_valor = update.message.text.strip()
+    
+    # Resgata o ID da regulação e o campo salvos no contexto do usuário
+    reg_id = context.user_data.get("corr_reg_id") or context.user_data.get("reg_id")
+    campo = context.user_data.get("corr_campo")
 
-    texto_digitado = update.message.text.strip()
-    reg_id = context.user_data.get("corr_reg_id")
-    campo_raw = context.user_data.get("corr_campo")
+    # Log para acompanhamento no Railway
+    logger.info(f"Tentando atualizar no Supabase -> ID: {reg_id} | Campo: {campo} | Novo Valor: {novo_valor}")
 
-    if not reg_id or not campo_raw:
+    if not reg_id or not campo:
         await update.message.reply_text(
-            "⚠️ Sessão expirada ou dados inválidos. Tente o processo novamente.", 
+            "⚠️ <b>Dados da sessão perdidos.</b> Por favor, inicie a correção novamente.",
+            parse_mode="HTML",
             reply_markup=TECLADO_MENU
         )
         context.user_data.clear()
         return ConversationHandler.END
 
-    # Mapeamento do nome do campo interno para a coluna real do Supabase
-    MAPA_COLUNAS = {
-        "numero_sus": "numero_sus",
-        "nome_paciente": "nome_paciente",
-        "celular": "celular",
-        "data_nascimento": "data_nascimento",
-        "numero_reg": "numero_reg",
-        "cbo": "cbo",
-        "procedimento": "procedimento"
-    }
-
-    campo = MAPA_COLUNAS.get(campo_raw, campo_raw)
-    novo_valor = texto_digitado
-
     # --------------------------------------------------
-    # FORMATAÇÃO E SANITIZAÇÃO DE DADOS
+    # EXECUÇÃO E PERSISTÊNCIA NO BANCO
     # --------------------------------------------------
-    if campo == "data_nascimento":
-        apenas_numeros = re.sub(r"\D", "", texto_digitado)
-        if len(apenas_numeros) != 8:
-            await update.message.reply_text(
-                "⚠️ <b>Data inválida!</b>\nDigite apenas os 8 números da data (ex: <b>18091977</b>):",
-                parse_mode="HTML"
-            )
-            return AGUARDAR_NOVO_VALOR
-        
-        data_com_barras = f"{apenas_numeros[:2]}/{apenas_numeros[2:4]}/{apenas_numeros[4:]}"
-        try:
-            # Converte para YYYY-MM-DD para compatibilidade com a coluna DATE do PostgreSQL
-            novo_valor = datetime.strptime(data_com_barras, "%d/%m/%Y").strftime("%Y-%m-%d")
-        except ValueError:
-            await update.message.reply_text(
-                "⚠️ <b>Data inexistente!</b> Verifique o dia e o mês e digite novamente (ex: 18091977):",
-                parse_mode="HTML"
-            )
-            return AGUARDAR_NOVO_VALOR
+    try:
+        sucesso = await atualizar_campo_regulacao(reg_id, campo, novo_valor)
+    except Exception as e:
+        logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
+        sucesso = False
 
-    elif campo in ["numero_sus", "celular", "numero_reg"]:
-        novo_valor = re.sub(r"\D", "", texto_digitado)
-        if not novo_valor:
-            await update.message.reply_text("⚠️ Valor inválido! Digite apenas números:")
-            return AGUARDAR_NOVO_VALOR
+    if sucesso:
+        await update.message.reply_text(
+            "✅ <b>Registro atualizado com sucesso no banco de dados!</b>", 
+            parse_mode="HTML", 
+            reply_markup=TECLADO_MENU
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Falha ao atualizar o registro no banco de dados. Tente novamente mais tarde.", 
+            reply_markup=TECLADO_MENU
+        )
+
+    # Limpa os dados temporários da sessão
+    context.user_data.clear()
+    return ConversationHandler.END
 
     # --------------------------------------------------
     # EJECUÇÃO E PERSISTÊNCIA NO BANCO
