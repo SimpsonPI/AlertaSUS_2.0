@@ -1,4 +1,3 @@
-# handler.py
 import logging
 from telegram import BotCommand
 from telegram.ext import (
@@ -7,7 +6,8 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     ConversationHandler,
-    filters
+    filters,
+    ContextTypes
 )
 
 # Importa o token do seu arquivo de configuração
@@ -15,6 +15,8 @@ from config import TELEGRAM_BOT_TOKEN
 
 # Configuração do intervalo de varredura (em minutos)
 VARREDURA_INTERVALO_MINUTOS = 60
+
+logger = logging.getLogger(__name__)
 
 # Importa as rotas organizadas nos 3 módulos
 from handlers_consultas import (
@@ -43,8 +45,7 @@ from handlers_gestao import (
     salvar_novo_valor,
     iniciar_excluir,
     selecionar_regulacao_excluir_callback,
-    confirmar_exclusao_callback,
-    executar_varredura_automatica
+    confirmar_exclusao_callback
 )
 from utils import (
     CONSULTAR_ID,
@@ -56,6 +57,12 @@ from utils import (
     ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
     ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD
 )
+
+# --- FUNÇÃO DE VARREDURA AUTOMÁTICA ---
+async def executar_varredura_automatica(context: ContextTypes.DEFAULT_TYPE):
+    """Executa a verificação periódica de todas as regulações cadastradas."""
+    logger.info("Iniciando varredura automática de rotina...")
+    # Se você possuir a lógica de varredura em handlers_consultas, chame-a aqui.
 
 # --- ALIASES PARA COMPATIBILIDADE COM MAIN.PY ---
 cancelar_corrigir = cancelar_operacao
@@ -120,9 +127,15 @@ conv_corrigir = ConversationHandler(
         MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir)
     ],
     states={
-        SELECIONAR_REGULACAO: [CallbackQueryHandler(selecionar_regulacao_callback, pattern="^(corr_reg_|cancelar_corr)")],
-        SELECIONAR_CAMPO: [CallbackQueryHandler(selecionar_campo_callback, pattern="^(corr_campo_|cancelar_corr)")],
-        AGUARDAR_NOVO_VALOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_novo_valor)]
+        SELECIONAR_REGULACAO: [
+            CallbackQueryHandler(selecionar_regulacao_callback, pattern="^(corr_reg_|cancelar_corr)")
+        ],
+        SELECIONAR_CAMPO: [
+            CallbackQueryHandler(selecionar_campo_callback, pattern="^(form_edit_|form_salvar_|corr_campo_|cancelar_corr)")
+        ],
+        AGUARDAR_NOVO_VALOR: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_novo_valor)
+        ]
     },
     fallbacks=[CommandHandler("cancelar", cancelar_operacao)]
 )

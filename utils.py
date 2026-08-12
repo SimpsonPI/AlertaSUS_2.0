@@ -87,7 +87,8 @@ def tratar_status_fms(status_fms: str) -> str:
 def _extrair_id_e_nome(reg: dict):
     num_id = reg.get("numero_reg") or reg.get("num_reg") or reg.get("numero_regulacao") or reg.get("numero_solicitacao") or reg.get("id_regulacao") or reg.get("id")
     nome = reg.get("nome_paciente") or reg.get("paciente") or reg.get("nome") or "Paciente não informado"
-    return str(num_id), str(nome)
+    cbo = reg.get("cbo") or reg.get("especialidade") or ""
+    return str(num_id), str(nome), str(cbo)
 
 def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> str:
     resultado = resultado or {}

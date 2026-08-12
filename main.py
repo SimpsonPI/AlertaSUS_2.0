@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram.ext import (
-    Application,
+    ApplicationBuilder,
     ConversationHandler, 
     CommandHandler, 
     MessageHandler, 
@@ -76,7 +76,6 @@ logging.basicConfig(
 # HANDLERS DE CONVERSAÇÃO (CONVERSATION HANDLERS)
 # --------------------------------------------------
 
-# 1. Cadastro Interativo
 # 1. Cadastro Interativo no Telegram
 conv_cadastro = ConversationHandler(
     entry_points=[
@@ -120,11 +119,10 @@ conv_cadastro = ConversationHandler(
         CommandHandler("cancelar", cancelar_operacao),
         MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
     ],
-    allow_reentry=True,
-    per_message=False
+    allow_reentry=True
 )
 
-# 2. Verificar Específico (Com tratamento flexível de acentuação no Regex)
+# 2. Verificar Específico (Consulta Individual)
 conv_verificar_especifico = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("(?i).*Verificar Espec[íi]fico.*"), iniciar_verificar_especifico),
@@ -132,7 +130,7 @@ conv_verificar_especifico = ConversationHandler(
     ],
     states={
         CONSULTAR_ID: [
-            CallbackQueryHandler(processar_verificar_especifico, pattern="^(ver_esp_|cancelar_ver_esp)$"),
+            CallbackQueryHandler(processar_verificar_especifico, pattern="^(ver_esp_|cancelar_ver_esp)"),
             MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
             MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)
         ]
@@ -141,8 +139,7 @@ conv_verificar_especifico = ConversationHandler(
         CommandHandler("cancelar", cancelar_operacao),
         MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
     ],
-    allow_reentry=True,
-    per_message=False
+    allow_reentry=True
 )
 
 # 3. Corrigir Dados (Central Interativa por Botões)
@@ -153,10 +150,10 @@ conv_corrigir = ConversationHandler(
     ],
     states={
         SELECIONAR_REGULACAO: [
-            CallbackQueryHandler(selecionar_regulacao_callback)
+            CallbackQueryHandler(selecionar_regulacao_callback, pattern=".*")
         ],
         SELECIONAR_CAMPO: [
-            CallbackQueryHandler(selecionar_campo_callback)
+            CallbackQueryHandler(selecionar_campo_callback, pattern=".*")
         ],
         AGUARDAR_NOVO_VALOR: [
             MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_corrigir),
@@ -167,30 +164,28 @@ conv_corrigir = ConversationHandler(
         CommandHandler("cancelar", cancelar_corrigir),
         MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_corrigir)
     ],
-    allow_reentry=True,
-    per_message=False
+    allow_reentry=True
 )
 
 # 4. Excluir Regulação Interativa
 conv_excluir = ConversationHandler(
     entry_points=[
-        MessageHandler(filters.Regex("(?i)Excluir"), iniciar_excluir),
+        MessageHandler(filters.Regex("^🗑️ Excluir Regulação$"), iniciar_excluir),
         CommandHandler("excluir", iniciar_excluir)
     ],
     states={
         SELECIONAR_REGULACAO_EXCLUIR: [
-            CallbackQueryHandler(selecionar_regulacao_excluir_callback)
+            CallbackQueryHandler(selecionar_regulacao_excluir_callback, pattern=".*")
         ],
         CONFIRMAR_EXCLUSAO: [
-            CallbackQueryHandler(confirmar_exclusao_callback)
+            CallbackQueryHandler(confirmar_exclusao_callback, pattern=".*")
         ]
     },
     fallbacks=[
         CommandHandler("cancelar", cancelar_excluir),
         MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_excluir)
     ],
-    allow_reentry=True,
-    per_message=False
+    allow_reentry=True
 )
 
 # --------------------------------------------------
@@ -198,31 +193,23 @@ conv_excluir = ConversationHandler(
 # --------------------------------------------------
 
 def main():
-    if not TELEGRAM_BOT_TOKEN:
-        logging.error("TELEGRAM_BOT_TOKEN não foi configurado.")
-        return
+    # Inicializa a aplicação
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Adição dos Handlers de Conversação ao App
+    # 1. REGISTRO DOS CONVERSATION HANDLERS
     app.add_handler(conv_cadastro)
     app.add_handler(conv_verificar_especifico)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
 
-    # Handlers Diretos e Comandos de Menu
+    # 2. COMANDOS SIMPLES E BOTÕES DO MENU PRINCIPAL
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(CommandHandler("verificar", comando_verificar_todas))
-
     app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
-    app.add_handler(MessageHandler(filters.Regex("^ℹ️ Ajuda$"), comando_ajuda))
+    app.add_handler(CommandHandler("verificar_todas", comando_verificar_todas))
 
-    # Configura o menu de comandos azul do Telegram ao iniciar
-    app.post_init = configurar_menu_comandos
-
-    print("🚀 AlertaSUS 2.0 pronto e rodando!", flush=True)
-    app.run_polling(drop_pending_updates=True)
+    logging.info("Bot AlertaSUS 2.0 iniciado com sucesso!")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
