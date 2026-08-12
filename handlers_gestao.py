@@ -11,8 +11,9 @@ from scraper import consultar_status_fms
 from utils import (
     TECLADO_MENU, SELECIONAR_REGULACAO, SELECIONAR_CAMPO, AGUARDAR_NOVO_VALOR,
     SELECIONAR_REGULACAO_EXCLUIR, CONFIRMAR_EXCLUSAO, _extrair_id_e_nome, formatar_data,
-    tratar_status_fms, _montar_msg_html, cancelar_operacao
+    tratar_status_fms, _montar_msg_html
 )
+from handlers_consultas import cancelar_operacao
 
 try:
     from database import buscar_todas_regulacoes_ativas
