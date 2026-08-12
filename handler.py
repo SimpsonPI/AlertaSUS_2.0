@@ -54,22 +54,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuração de Logging Unificada
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+# Nota padrão de isenção de vínculo
+DISCLAIMER_TEXTO = (
+    "⚠️ <b>Aviso Importante:</b> Esta é uma ferramenta particular e independente. "
+    "Não possui qualquer vínculo oficial com a Fundação Municipal de Saúde (FMS) ou outros órgãos públicos municipais, estaduais ou federais."
 )
-logger = logging.getLogger(__name__)
 
 # ==========================================
 # 🛠️ FUNÇÕES AUXILIARES DE FORMATAÇÃO
 # ==========================================
 def formatar_data(texto: str) -> str:
-    """Extrai os números e retorna no formato DD/MM/AAAA."""
+    """Converte a data digitada para YYYY-MM-DD (padrão aceito pelo PostgreSQL/Supabase)."""
     nums = re.sub(r"\D", "", texto)
     if len(nums) == 8:
         dia, mes, ano = nums[:2], nums[2:4], nums[4:]
-        return f"{dia}/{mes}/{ano}"
+        return f"{ano}-{mes}-{dia}"
+    elif "/" in texto:
+        partes = texto.split("/")
+        if len(partes) == 3 and len(partes[2]) == 4:
+            return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
     return texto
 
 def formatar_celular(texto: str) -> str:
@@ -326,6 +329,9 @@ def _montar_msg_html(numero_reg: str, resultado: dict, reg_db: dict = None) -> s
         posicao = resultado.get("posicao_fila") or reg_db.get("posicao_fila") or "Não informada"
         msg += f"<b>Posição na Fila:</b> {escape(str(posicao))}\n"
 
+    # Inclusão do aviso legal de isenção no rodapé do resultado
+    msg += f"\n\n<i>ℹ️ Ferramenta particular independente sem vínculo com a FMS ou órgãos públicos.</i>"
+
     return msg
 
 
@@ -355,6 +361,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Olá, <b>{escape(user.first_name)}</b>! 👋\n\n"
         f"Bem-vindo ao <b>AlertaSUS 2.0</b>.\n"
         f"Eu ajudo você a acompanhar o status de suas regulações na FMS Piauí em tempo real.\n\n"
+        f"{DISCLAIMER_TEXTO}\n\n"
         f"Escolha uma opção no menu abaixo para começar:"
     )
     await update.message.reply_text(mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
@@ -369,6 +376,7 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>➕ Cadastrar Nova:</b> Cadastra uma nova regulação para monitoramento contínuo.\n"
         "<b>✏️ Corrigir ID:</b> Altera informações de um cadastro existente.\n"
         "<b>🗑️ Excluir Regulação:</b> Remove uma regulação da sua lista de monitoramento.\n\n"
+        f"{DISCLAIMER_TEXTO}\n\n"
         "<i>Se precisar cancelar qualquer operação, clique em '🚫 Cancelar Operação' ou digite /cancelar.</i>"
     )
     await update.message.reply_text(mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
@@ -601,10 +609,11 @@ async def receber_nascimento(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
     data_str = update.message.text.strip()
-    try:
-        data_valida = datetime.strptime(data_str, "%d/%m/%Y").strftime("%Y-%m-%d")
-        context.user_data["nascimento"] = data_valida
-    except ValueError:
+    data_formatada = formatar_data(data_str)
+    
+    if len(data_formatada) == 10 and data_formatada.count("-") == 2:
+        context.user_data["nascimento"] = data_formatada
+    else:
         await update.message.reply_text("⚠️ Formato de data inválido! Digite no formato <b>DD/MM/AAAA</b>:", parse_mode="HTML")
         return ETAPA_NASCIMENTO
 
@@ -650,6 +659,7 @@ async def receber_procedimento(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(
         "🛡️ <b>TERMO DE CONSENTIMENTO LGPD</b>\n\n"
         "Para prosseguir com o monitoramento automático, autorizo o armazenamento dos dados fornecidos exclusivamente para finalidades de consulta pública no sistema FMS Piauí.\n\n"
+        f"{DISCLAIMER_TEXTO}\n\n"
         "Você aceita o termo?",
         parse_mode="HTML",
         reply_markup=teclado_lgpd
@@ -709,11 +719,8 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     teclado = []
     for r in regulacoes:
-        # Pega a chave primária real (id) para atualizar exatamente a linha do banco
         db_id = r.get("id") or r.get("id_regulacao")
         num, nome = _extrair_id_e_nome(r)
-        
-        # O callback_data guarda o db_id real da tabela!
         teclado.append([InlineKeyboardButton(f"📄 Reg: {num} - {nome}", callback_data=f"corr_reg_{db_id}")])
 
     teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
@@ -777,7 +784,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     reg_id = context.user_data.get("corr_reg_id") or context.user_data.get("reg_id")
     campo = context.user_data.get("corr_campo")
 
-    # 1. Trava de segurança no início: verifica se reg_id e campo existem na sessão
+    # Trava de segurança no início: verifica se reg_id e campo existem na sessão
     if not reg_id or not campo:
         await update.message.reply_text(
             "⚠️ <b>Dados da sessão perdidos.</b> Por favor, inicie a correção novamente.",
@@ -787,16 +794,13 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data.clear()
         return ConversationHandler.END
 
-    # 2. Formatação para data de nascimento (aceita DDMMYYYY ou DD/MM/YYYY)
+    # Converte o valor para YYYY-MM-DD se o campo for data_nascimento
     if campo == "data_nascimento":
-        apenas_numeros = re.sub(r"\D", "", novo_valor)
-        if len(apenas_numeros) == 8:
-            dia, mes, ano = apenas_numeros[:2], apenas_numeros[2:4], apenas_numeros[4:]
-            novo_valor = f"{ano}-{mes}-{dia}"  # Converte para YYYY-MM-DD (padrão PostgreSQL)
+        novo_valor = formatar_data(novo_valor)
 
     logger.info(f"Tentando atualizar no Supabase -> ID/Reg: {reg_id} | Campo: {campo} | Novo Valor: {novo_valor}")
 
-    # 3. Execução da atualização no banco
+    # Execução da atualização no banco
     try:
         res = atualizar_campo_regulacao(reg_id, campo, novo_valor)
         sucesso = await res if hasattr(res, "__await__") else res
@@ -804,7 +808,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.error(f"Erro ao atualizar campo {campo} no Supabase: {e}")
         sucesso = False
 
-    # 4. Retorno visual para o usuário
+    # Retorno visual para o usuário
     if sucesso:
         await update.message.reply_text(
             "✅ <b>Registro atualizado com sucesso no banco de dados!</b>", 
@@ -840,11 +844,8 @@ async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     teclado = []
     for r in regulacoes:
-        # Pega a chave primária real (id) para deletar exatamente a linha certa
         db_id = r.get("id") or r.get("id_regulacao")
         num, nome = _extrair_id_e_nome(r)
-        
-        # O callback_data guarda o db_id real da tabela!
         teclado.append([InlineKeyboardButton(f"🗑️ Reg: {num} - {nome}", callback_data=f"excl_reg_{db_id}")])
 
     teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])

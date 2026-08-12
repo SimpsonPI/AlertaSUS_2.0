@@ -6,6 +6,18 @@ from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
+def formatar_data(texto: str) -> str:
+    """Converte a data digitada para YYYY-MM-DD (padrão aceito pelo PostgreSQL/Supabase)."""
+    nums = re.sub(r"\D", "", texto)
+    if len(nums) == 8:
+        dia, mes, ano = nums[:2], nums[2:4], nums[4:]
+        return f"{ano}-{mes}-{dia}"
+    elif "/" in texto:
+        partes = texto.split("/")
+        if len(partes) == 3 and len(partes[2]) == 4:
+            return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
+    return texto
+
 # Nome padrão da tabela no Supabase
 TABELA_SUPABASE = "AlertaSUS_2.0"
 
@@ -29,18 +41,7 @@ def _formatar_valor_campo(campo: str, valor: str) -> str:
     
     # Tratamento especial para datas de nascimento (converte DDMMAAAA ou DD/MM/AAAA para AAAA-MM-DD)
     if campo in ["data_nascimento", "dt_nascimento", "data_nac"]:
-        nums = re.sub(r"\D", "", txt)
-        
-        # Formato DDMMAAAA (ex: 18091977 -> 1977-09-18)
-        if len(nums) == 8:
-            dia, mes, ano = nums[:2], nums[2:4], nums[4:]
-            return f"{ano}-{mes}-{dia}"
-            
-        # Formato DD/MM/AAAA (ex: 18/09/1977 -> 1977-09-18)
-        if "/" in txt:
-            partes = txt.split("/")
-            if len(partes) == 3:
-                return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
+        return formatar_data(txt)
                 
     return txt
 
@@ -110,57 +111,36 @@ async def salvar_regulacao(dados: dict) -> bool:
         return False
 
 
-async def atualizar_campo_regulacao(reg_id, campo: str, valor: str) -> bool:
-    """Atualiza ou insere (UPSERT) o registro no Supabase com tratamento de tipos e logs detalhados."""
+def atualizar_campo_regulacao(reg_id, campo, novo_valor):
+    """
+    Atualiza EXCLUSIVAMENTE um registro existente no Supabase.
+    NUNCA cria linhas novas.
+    """
     try:
-        if not reg_id or not campo:
-            print("❌ [Supabase] ID ou Campo nulos recebidos para atualização.", flush=True)
-            return False
+        reg_id_str = str(reg_id).strip()
+        novo_valor_formatado = _formatar_valor_campo(campo, novo_valor)
+        logger.info(f"Fazendo UPDATE no Supabase -> Filtro Target ID: {reg_id_str} | Campo: {campo} | Valor: {novo_valor_formatado}")
 
-        num_str = str(reg_id).strip()
-        num_int = int(num_str) if num_str.isdigit() else None
-        id_query = num_int if num_int is not None else num_str
+        # 1. Tenta atualizar diretamente pela Chave Primária (coluna 'id')
+        res = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("id", reg_id_str).execute()
 
-        # Tratamento e conversão prévia do valor (ex: datas -> AAAA-MM-DD)
-        valor_formatado = _formatar_valor_campo(campo, valor)
-
-        print(f"🔄 [Supabase] Atualizando ID '{id_query}' | Campo '{campo}' -> '{valor_formatado}'", flush=True)
-
-        payload = {campo: valor_formatado}
-
-        # 1. Tenta o UPDATE direto na tabela testando variações de colunas e tipos
-        colunas_id = ["numero_reg", "id", "id_regulacao"]
-        valores_id = [id_query]
-        if num_int is not None and num_str not in valores_id:
-            valores_id.append(num_str)
-
-        for c_id in colunas_id:
-            for v_id in valores_id:
-                try:
-                    res = supabase.table(TABELA_SUPABASE).update(payload).eq(c_id, v_id).select().execute()
-                    if res and res.data and len(res.data) > 0:
-                        print(f"✅ [Supabase] Update realizado com sucesso por '{c_id}'!", flush=True)
-                        return True
-                except Exception:
-                    continue
-
-        # 2. Se a linha não existia para update, executa o UPSERT (cria a linha com os dados atualizados)
-        print("⚠️ [Supabase] Registro não localizado para update. Executando UPSERT...", flush=True)
-        dados_upsert = {
-            "numero_reg": id_query,
-            campo: valor_formatado
-        }
-        res_upsert = supabase.table(TABELA_SUPABASE).upsert(dados_upsert).select().execute()
-
-        if res_upsert and res_upsert.data:
-            print("✅ [Supabase] Registro criado e atualizado via UPSERT!", flush=True)
+        # Se atualizou a linha com sucesso
+        if res.data and len(res.data) > 0:
+            logger.info("UPDATE realizado com sucesso por 'id'.")
             return True
 
-        print("❌ [Supabase] Nenhuma linha afetada na operação.", flush=True)
+        # 2. Se não achou por 'id', tenta atualizar pelo 'numero_reg'
+        res_alt = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("numero_reg", reg_id_str).execute()
+
+        if res_alt.data and len(res_alt.data) > 0:
+            logger.info("UPDATE realizado com sucesso por 'numero_reg'.")
+            return True
+
+        logger.error(f"Nenhum registro encontrado para atualizar com o ID/Numero: {reg_id_str}")
         return False
 
     except Exception as e:
-        print(f"❌ [Supabase ERROR] Falha ao atualizar {campo}: {str(e)}", flush=True)
+        logger.error(f"Erro ao executar UPDATE no Supabase: {e}")
         return False
 
 
