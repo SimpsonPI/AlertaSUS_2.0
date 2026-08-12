@@ -54,6 +54,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configuração de Logging Unificada
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ==========================================
+# 🛠️ FUNÇÕES AUXILIARES DE FORMATAÇÃO
+# ==========================================
+def formatar_data(texto: str) -> str:
+    """Extrai os números e retorna no formato DD/MM/AAAA."""
+    nums = re.sub(r"\D", "", texto)
+    if len(nums) == 8:
+        dia, mes, ano = nums[:2], nums[2:4], nums[4:]
+        return f"{dia}/{mes}/{ano}"
+    return texto
+
+def formatar_celular(texto: str) -> str:
+    """Extrai os números e retorna no formato (DD) 90000-0000 ou (DD) 0000-0000."""
+    nums = re.sub(r"\D", "", texto)
+    if len(nums) == 11:    # Celular com 9 dígitos
+        ddd, d1, d2 = nums[:2], nums[2:7], nums[7:]
+        return f"({ddd}) {d1}-{d2}"
+    elif len(nums) == 10:  # Telefone/Celular com 8 dígitos
+        ddd, d1, d2 = nums[:2], nums[2:6], nums[6:]
+        return f"({ddd}) {d1}-{d2}"
+    return texto
+
 # --------------------------------------------------
 # ESTADOS DAS CONVERSAÇÕES
 # --------------------------------------------------
@@ -553,12 +582,16 @@ async def receber_celular(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if await verificar_se_e_menu_e_executar(update, context):
         return ConversationHandler.END
 
-    celular = re.sub(r"\D", "", update.message.text)
-    if len(celular) < 10:
+    celular_raw = update.message.text
+    celular_limpo = re.sub(r"\D", "", celular_raw)
+    
+    if len(celular_limpo) < 10:
         await update.message.reply_text("⚠️ Número inválido. Digite o DDD + Número (ex: 86999998888):")
         return ETAPA_CELULAR
 
-    context.user_data["celular"] = celular
+    # Aplica a formatação para salvar como (86) 90000-0000 no Supabase
+    context.user_data["celular"] = formatar_celular(celular_raw)
+    
     await update.message.reply_text("Qual a <b>data de nascimento</b> do paciente? (DD/MM/AAAA):", parse_mode="HTML")
     return ETAPA_NASCIMENTO
 
