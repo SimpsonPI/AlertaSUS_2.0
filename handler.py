@@ -1,5 +1,6 @@
 # handler.py
 import logging
+from telegram import BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -55,6 +56,26 @@ from utils import (
     ETAPA_SUS, ETAPA_NOME, ETAPA_CELULAR, ETAPA_NASCIMENTO,
     ETAPA_REGULACAO, ETAPA_CBO, ETAPA_PROCEDIMENTO, ETAPA_LGPD
 )
+
+# --- ALIASES PARA COMPATIBILIDADE COM MAIN.PY ---
+cancelar_corrigir = cancelar_operacao
+cancelar_excluir = cancelar_operacao
+cancelar_cadastro = cancelar_operacao
+
+# --- FUNÇÃO EXPORTADA PARA O MAIN.PY ---
+async def configurar_menu_comandos(app):
+    """Configura a lista de comandos no menu do Telegram."""
+    comandos = [
+        BotCommand("start", "Inicia o bot e exibe o menu principal"),
+        BotCommand("verificar", "Verifica todas as regulações cadastradas"),
+        BotCommand("consultar", "Consulta o status de uma regulação específica"),
+        BotCommand("cadastrar", "Cadastra uma nova regulação"),
+        BotCommand("corrigir", "Corrige dados de uma regulação"),
+        BotCommand("excluir", "Exclui uma regulação do monitoramento"),
+        BotCommand("ajuda", "Exibe ajuda e instruções de uso"),
+        BotCommand("cancelar", "Cancela a operação atual")
+    ]
+    await app.bot.set_my_commands(comandos)
 
 # --- CONVERSATION HANDLERS ---
 
