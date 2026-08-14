@@ -24,12 +24,15 @@ ETAPA_CBO = 35
 ETAPA_PROCEDIMENTO = 36
 ETAPA_LGPD = 37
 
-# Teclados
+# utils.py
+from telegram import ReplyKeyboardMarkup
+
 TECLADO_MENU = ReplyKeyboardMarkup(
     [
         ["📋 Verificar Todas", "🔍 Verificar Específico"],
         ["➕ Cadastrar Nova", "✏️ Corrigir ID"],
-        ["🗑️ Excluir Regulação", "ℹ️ Ajuda"]
+        ["🗑️ Excluir Regulação", "ℹ️ Ajuda"],
+        ["🚀 Início", "📄 Privacidade"]  # <-- Botões adicionados aqui
     ],
     resize_keyboard=True
 )

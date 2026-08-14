@@ -21,29 +21,59 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
-# Helper para formatar a data visualmente
-def _formatar_data_br(data_str):
+# ==================================================
+# FUNÇÕES DE MASCARAMENTO PARA PRIVACIDADE
+# ==================================================
+
+def _mascarar_cartao_sus(sus_str):
+    if not sus_str or str(sus_str).upper() == "NONE":
+        return "Não informado"
+    sus_str = str(sus_str).strip()
+    if len(sus_str) >= 4:
+        return "*" * (len(sus_str) - 4) + sus_str[-4:]
+    return "*****"
+
+def _mascarar_celular(cel_str):
+    if not cel_str or str(cel_str).upper() == "NONE":
+        return "Não informado"
+    cel_str = str(cel_str).strip()
+    if len(cel_str) >= 4:
+        return cel_str[:2] + " *****-" + cel_str[-4:]
+    return "(**)"
+
+def _formatar_data_br_mascarada(data_str):
     if not data_str or str(data_str).upper() == "NONE":
         return "Não informado"
     data_str = str(data_str).strip()
     if "-" in data_str:
         partes = data_str.split("T")[0].split("-")
         if len(partes) == 3:
-            return f"{partes[2]}/{partes[1]}/{partes[0]}"
-    return data_str
+            return f"**/**/{partes[0]}"
+    elif "/" in data_str:
+        partes = data_str.split("/")
+        if len(partes) == 3:
+            return f"**/**/{partes[2]}"
+    return "**/**/****"
 
-# Helper para reformatar e exibir o formulário atualizado na tela
+
+# Helper para exibir o formulário mascarado (sem opção de alterar SUS)
 async def _exibir_formulario_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE, editar_mensagem=True):
     num_reg = context.user_data.get("corr_num_reg")
     dados = context.user_data.get("corr_dados_temp", {})
 
+    # Aplicação de Máscaras para Privacidade
+    nome_fmt = mascarar_nome(str(dados.get('nome_paciente', '')))
+    sus_fmt = _mascarar_cartao_sus(str(dados.get('numero_sus', '')))
+    celular_fmt = _mascarar_celular(str(dados.get('celular', '')))
+    nasc_fmt = _formatar_data_br_mascarada(str(dados.get('data_nascimento', '')))
+
     resumo = (
         f"📝 <b>Formulário de Edição - Regulação <code>{escape(str(num_reg))}</code></b>\n"
-        f"<i>Modifique os campos desejados e clique em 'Salvar Alterações' no final.</i>\n\n"
-        f"👤 <b>Nome:</b> {escape(str(dados.get('nome_paciente', '')))}\n"
-        f"💳 <b>Cartão SUS:</b> {escape(str(dados.get('numero_sus', '')))}\n"
-        f"📱 <b>Celular:</b> {escape(str(dados.get('celular', '')))}\n"
-        f"🎂 <b>Nascimento:</b> {escape(_formatar_data_br(dados.get('data_nascimento', '')))}\n"
+        f"<i>Os dados estão parcialmente ocultos para sua privacidade.</i>\n\n"
+        f"👤 <b>Nome:</b> {escape(nome_fmt)}\n"
+        f"💳 <b>Cartão SUS:</b> {escape(sus_fmt)} <i>(Fixo)</i>\n"
+        f"📱 <b>Celular:</b> {escape(celular_fmt)}\n"
+        f"🎂 <b>Nascimento:</b> {escape(nasc_fmt)}\n"
         f"🏷️ <b>CBO:</b> {escape(str(dados.get('cbo', '')))}\n"
         f"🩺 <b>Procedimento:</b> {escape(str(dados.get('procedimento', '')))}\n\n"
         f"<b>Escolha um campo para alterar:</b>"
@@ -51,7 +81,6 @@ async def _exibir_formulario_edicao(update: Update, context: ContextTypes.DEFAUL
 
     teclado = [
         [InlineKeyboardButton("👤 Alterar Nome", callback_data="form_edit_nome_paciente")],
-        [InlineKeyboardButton("💳 Alterar Cartão SUS", callback_data="form_edit_numero_sus")],
         [InlineKeyboardButton("📱 Alterar Celular", callback_data="form_edit_celular")],
         [InlineKeyboardButton("🎂 Alterar Nascimento", callback_data="form_edit_data_nascimento")],
         [InlineKeyboardButton("🏷️ Alterar CBO", callback_data="form_edit_cbo")],
@@ -63,13 +92,27 @@ async def _exibir_formulario_edicao(update: Update, context: ContextTypes.DEFAUL
     markup = InlineKeyboardMarkup(teclado)
 
     if editar_mensagem and update.callback_query:
-        await update.callback_query.edit_message_text(resumo, parse_mode="HTML", reply_markup=markup)
+        msg = await update.callback_query.edit_message_text(resumo, parse_mode="HTML", reply_markup=markup)
+        context.user_data["corr_msg_id"] = msg.message_id
     else:
         chat_id = update.effective_chat.id
-        await context.bot.send_message(chat_id=chat_id, text=resumo, parse_mode="HTML", reply_markup=markup)
+        msg = await context.bot.send_message(chat_id=chat_id, text=resumo, parse_mode="HTML", reply_markup=markup)
+        context.user_data["corr_msg_id"] = msg.message_id
+
+
+# Helper para deletar a mensagem do formulário (Autodestruição de privacidade)
+async def _deletar_mensagem_formulario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    msg_id = context.user_data.get("corr_msg_id")
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except Exception as e:
+            logger.warning(f"Não foi possível deletar a mensagem de edição: {e}")
+
 
 # ==================================================
-# FLUXO DE CORREÇÃO DE REGULAÇÃO (FORMULÁRIO MULTI-EDIT)
+# FLUXO DE CORREÇÃO DE REGULAÇÃO
 # ==================================================
 
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -96,11 +139,12 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
-        await update.message.reply_text(
+        msg = await update.message.reply_text(
             "✏️ <b>Selecione qual regulação deseja corrigir:</b>",
             reply_markup=InlineKeyboardMarkup(teclado),
             parse_mode="HTML"
         )
+        context.user_data["corr_msg_id"] = msg.message_id
         return SELECIONAR_REGULACAO
 
     except Exception as e:
@@ -113,15 +157,14 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
     await query.answer()
 
     if query.data == "cancelar_corr":
-        await query.edit_message_text("❌ Operação de correção cancelada.")
-        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        await _deletar_mensagem_formulario(update, context)
+        await query.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
         context.user_data.clear()
         return ConversationHandler.END
 
     num_reg = query.data.replace("corr_reg_", "").strip()
     context.user_data["corr_num_reg"] = num_reg
 
-    # Carrega dados do banco para a memória local (rascunho)
     user_id = update.effective_user.id
     regulacoes = buscar_regulacoes_por_usuario(user_id)
     if hasattr(regulacoes, "__await__"):
@@ -132,7 +175,6 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
         if str(r.get("numero_reg") or r.get("numero_regulacao") or r.get("id_regulacao") or r.get("id")) == str(num_reg)
     ), {})
 
-    # Guarda o rascunho temporário
     context.user_data["corr_dados_temp"] = {
         "nome_paciente": reg_atual.get("nome_paciente") or "",
         "numero_sus": reg_atual.get("numero_sus") or reg_atual.get("cartao_sus") or "",
@@ -153,12 +195,12 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
     data = query.data
 
     if data == "cancelar_corr":
-        await query.edit_message_text("❌ Operação de correção cancelada.")
-        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        await _deletar_mensagem_formulario(update, context)
+        await query.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
         context.user_data.clear()
         return ConversationHandler.END
 
-    # BOTÃO FINAL: SALVAR TUDO NO SUPABASE
+    # BOTÃO SALVAR TUDO: APAGA O FORMULÁRIO E SALVA
     if data == "form_salvar_tudo":
         num_reg = context.user_data.get("corr_num_reg")
         dados_temp = context.user_data.get("corr_dados_temp", {})
@@ -173,19 +215,19 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
                 logger.error(f"Erro ao atualizar {campo_db}: {e}")
                 erros += 1
 
-        if erros == 0:
-            await query.edit_message_text(f"✅ <b>Todas as alterações da regulação <code>{escape(str(num_reg))}</code> foram salvas com sucesso!</b>", parse_mode="HTML")
-        else:
-            await query.edit_message_text("⚠️ Algumas alterações podem não ter sido salvas. Verifique o banco de dados.")
+        # DELETA A MENSAGEM DO FORMULÁRIO COM OS DADOS DA TELA
+        await _deletar_mensagem_formulario(update, context)
 
-        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
+        if erros == 0:
+            await query.message.reply_text(f"✅ <b>Todas as alterações da regulação <code>{escape(str(num_reg))}</code> foram salvas com sucesso!</b>", parse_mode="HTML", reply_markup=TECLADO_MENU)
+        else:
+            await query.message.reply_text("⚠️ Algumas alterações podem não ter sido salvas. Verifique o banco de dados.", reply_markup=TECLADO_MENU)
+
         context.user_data.clear()
         return ConversationHandler.END
 
-    # SELEÇÃO DE UM CAMPO PARA EDITAR
     campo_map = {
         "form_edit_nome_paciente": ("nome_paciente", "o **Nome do Paciente**"),
-        "form_edit_numero_sus": ("numero_sus", "o **Cartão SUS**"),
         "form_edit_celular": ("celular", "o **Celular**"),
         "form_edit_data_nascimento": ("data_nascimento", "a **Data de Nascimento** (DD/MM/AAAA)"),
         "form_edit_cbo": ("cbo", "o **CBO / Especialidade**"),
@@ -207,26 +249,19 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     campo_em_edicao = context.user_data.get("corr_campo_em_edicao")
 
     if campo_em_edicao:
-        # Tratamento: maiúsculas automáticas para texto (preserva celular/data)
         if campo_em_edicao not in ["celular", "data_nascimento"]:
             novo_valor = novo_valor.upper()
 
-        # Atualiza apenas no RASCUNHO temporário
         context.user_data["corr_dados_temp"][campo_em_edicao] = novo_valor
 
-    # Reexibe o formulário com o campo atualizado para que o usuário possa alterar mais ou salvar
     await _exibir_formulario_edicao(update, context, editar_mensagem=False)
     return SELECIONAR_CAMPO
 
 
 async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await _deletar_mensagem_formulario(update, context)
     context.user_data.clear()
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.edit_message_text("❌ Operação de correção cancelada.")
-        await update.callback_query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
-    else:
-        await update.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
+    await update.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
     return ConversationHandler.END
 
 

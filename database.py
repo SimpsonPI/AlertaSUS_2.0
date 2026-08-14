@@ -21,63 +21,59 @@ def formatar_data(texto: str) -> str:
 # Nome padrão da tabela no Supabase
 TABELA_SUPABASE = "AlertaSUS_2.0"
 
-# Inicialização do cliente Supabase
-try:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    print(f"⚠️ Alerta na inicialização do Supabase no database.py: {e}", flush=True)
+# Inicialização e Validação Estrita das Credenciais do Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.critical("❌ CRÍTICO: 'SUPABASE_URL' ou 'SUPABASE_KEY' não configuradas no ambiente! O banco de dados não funcionará.")
+    supabase = None
+else:
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.info("✅ Supabase inicializado com sucesso no database.py.")
+    except Exception as e:
+        logger.error(f"⚠️ Erro ao criar cliente Supabase: {e}")
+        supabase = None
 
 
 def _obter_tabelas():
-    """Retorna as tabelas a serem pesquisadas por ordem de prioridade."""
     return [TABELA_SUPABASE, "principal"]
 
 
 def _formatar_valor_campo(campo: str, valor: str) -> str:
-    """Trata e converte os valores para os tipos esperados pelo PostgreSQL/Supabase."""
     txt = str(valor).strip()
-    
-    # Tratamento especial para datas de nascimento (converte DDMMAAAA ou DD/MM/AAAA para AAAA-MM-DD)
     if campo in ["data_nascimento", "dt_nascimento", "data_nac"]:
         return formatar_data(txt)
-                
     return txt
 
 
 def buscar_regulacoes_por_chat_id(chat_id):
-    """Busca regulações no Supabase testando colunas individualmente sem interromper em caso de erro."""
+    if not supabase:
+        return []
     try:
-        cid_int = int(chat_id)
+        cid_int = int(chat_id) if str(chat_id).isdigit() else chat_id
         cid_str = str(chat_id)
 
-        print(f"🔍 DEBUG SUPABASE: Buscando registros para chat_id (int: {cid_int}, str: '{cid_str}')", flush=True)
-
-        colunas_possiveis = ["id_do_chat", "chat_id", "telegram_id"]
+        colunas_possiveis = ["chat_id", "id_do_chat", "telegram_id"]
 
         for tabela in _obter_tabelas():
             for col in colunas_possiveis:
-                for val in [cid_int, cid_str]:
+                for val in [cid_str, cid_int]:
                     try:
                         res = supabase.table(tabela).select("*").eq(col, val).execute()
                         if res and res.data and len(res.data) > 0:
-                            print(f"📊 DEBUG SUPABASE: {len(res.data)} registros encontrados na tabela '{tabela}' (coluna '{col}').", flush=True)
                             return res.data
                     except Exception:
                         continue
-
-        print("📊 DEBUG SUPABASE: Nenhum registro encontrado em nenhuma coluna/tabela.", flush=True)
         return []
-
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO SUPABASE: {e}", flush=True)
+        logger.error(f"❌ Erro ao buscar regulações por chat_id: {e}")
         return []
 
 
 def obter_regulacao_por_numero(numero_reg: str):
-    """Busca os dados completos de uma regulação pelo ID/Número da Regulação no Supabase."""
-    if not numero_reg:
+    if not supabase or not numero_reg:
         return None
 
     num_str = str(numero_reg).strip()
@@ -92,86 +88,97 @@ def obter_regulacao_por_numero(numero_reg: str):
                         return res.data[0]
                 except Exception:
                     continue
-
     return None
 
 
 def obter_regulacao_por_id(id_reg):
-    """Alias para obter regulação por número ou chave primária."""
     return obter_regulacao_por_numero(id_reg)
 
 
 async def salvar_regulacao(dados: dict) -> bool:
-    """Insere uma nova regulação na tabela do Supabase."""
+    if not supabase:
+        return False
     try:
-        resposta = supabase.table(TABELA_SUPABASE).insert(dados).execute()
-        return bool(resposta.data)
+        payload = {
+            "chat_id": str(dados.get("chat_id") or dados.get("id_do_chat")),
+            "numero_reg": dados.get("numero_reg") or dados.get("regulacao"),
+            "nome_paciente": dados.get("nome_paciente") or dados.get("nome"),
+            "status_anterior": dados.get("status_anterior") or "PENDENTE",
+            "data_nascimento": dados.get("data_nascimento") or dados.get("nascimento"),
+            "celular": dados.get("celular"),
+            "numero_sus": dados.get("numero_sus") or dados.get("sus"),
+            "cbo": dados.get("cbo"),
+            "procedimento": dados.get("procedimento")
+        }
+
+        resposta = supabase.table(TABELA_SUPABASE).insert(payload).execute()
+        
+        if resposta.data:
+            logger.info("Regulação salva com sucesso no Supabase!")
+            return True
+        return False
+
     except Exception as e:
-        print(f"❌ Erro ao salvar regulação no Supabase: {e}", flush=True)
+        logger.error(f"❌ Erro ao salvar regulação: {e}")
         return False
 
 
 def atualizar_campo_regulacao(reg_id, campo, novo_valor):
-    """
-    Atualiza EXCLUSIVAMENTE um registro existente no Supabase.
-    NUNCA cria linhas novas.
-    """
+    if not supabase:
+        return False
     try:
         reg_id_str = str(reg_id).strip()
+
+        if campo == "status_atual":
+            campo = "status_anterior"
+
         novo_valor_formatado = _formatar_valor_campo(campo, novo_valor)
-        logger.info(f"Fazendo UPDATE no Supabase -> Filtro Target ID: {reg_id_str} | Campo: {campo} | Valor: {novo_valor_formatado}")
 
-        # 1. Tenta atualizar diretamente pela Chave Primária (coluna 'id')
         res = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("id", reg_id_str).execute()
-
-        # Se atualizou a linha com sucesso
         if res.data and len(res.data) > 0:
-            logger.info("UPDATE realizado com sucesso por 'id'.")
             return True
 
-        # 2. Se não achou por 'id', tenta atualizar pelo 'numero_reg'
         res_alt = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("numero_reg", reg_id_str).execute()
-
         if res_alt.data and len(res_alt.data) > 0:
-            logger.info("UPDATE realizado com sucesso por 'numero_reg'.")
             return True
 
-        logger.error(f"Nenhum registro encontrado para atualizar com o ID/Numero: {reg_id_str}")
         return False
-
     except Exception as e:
         logger.error(f"Erro ao executar UPDATE no Supabase: {e}")
         return False
 
 
 def deletar_regulacao_por_id(chat_id, numero_reg):
-    """Deleta do Supabase a regulação correspondente ao chat_id e numero_reg."""
+    if not supabase:
+        return False
     try:
-        cid_int = int(chat_id)
+        cid_int = int(chat_id) if str(chat_id).isdigit() else chat_id
+        cid_str = str(chat_id)
         num_str = str(numero_reg)
 
-        for col in ["id_do_chat", "chat_id"]:
-            try:
-                resposta = (
-                    supabase.table(TABELA_SUPABASE)
-                    .delete()
-                    .eq(col, cid_int)
-                    .eq("numero_reg", num_str)
-                    .execute()
-                )
-                if resposta and resposta.data:
-                    return True
-            except Exception:
-                continue
-
+        for col in ["chat_id", "id_do_chat"]:
+            for val in [cid_str, cid_int]:
+                try:
+                    resposta = (
+                        supabase.table(TABELA_SUPABASE)
+                        .delete()
+                        .eq(col, val)
+                        .eq("numero_reg", num_str)
+                        .execute()
+                    )
+                    if resposta and resposta.data:
+                        return True
+                except Exception:
+                    continue
         return True
     except Exception as e:
-        print(f"❌ Erro ao deletar regulação {numero_reg}: {e}", flush=True)
+        logger.error(f"❌ Erro ao deletar regulação {numero_reg}: {e}")
         return False
 
 
 async def excluir_regulacao_db(reg_id) -> bool:
-    """Exclui uma regulação do Supabase buscando tanto pelo id quanto pelo numero_reg."""
+    if not supabase:
+        return False
     try:
         num_str = str(reg_id).strip()
         num_int = int(num_str) if num_str.isdigit() else None
@@ -185,29 +192,68 @@ async def excluir_regulacao_db(reg_id) -> bool:
                         return True
                 except Exception:
                     continue
-
         return False
     except Exception as e:
-        print(f"❌ Erro ao excluir regulação do Supabase: {e}", flush=True)
+        logger.error(f"❌ Erro ao excluir regulação do Supabase: {e}")
         return False
 
+
+from datetime import datetime, timezone, timedelta
 
 async def registrar_consentimento_lgpd(user_id, aceito: bool = True) -> bool:
-    """Registra aceite do termo LGPD."""
+    if not supabase:
+        return False
     try:
-        dados = {"chat_id": int(user_id), "lgpd_aceito": aceito}
-        supabase.table("lgpd_consentimentos").upsert(dados).execute()
+        # Define o fuso horário do Brasil (UTC-3)
+        fuso_brasil = timezone(timedelta(hours=-3))
+        agora_brasil = datetime.now(fuso_brasil).isoformat()
+
+        dados = {
+            "chat_id": str(user_id),
+            "termo_aceito": aceito,
+            "data_aceito": agora_brasil  # Garante o registro na hora local
+        }
+        
+        # Como o 'chat_id' é Unique agora, o upsert funciona perfeitamente sem duplicar
+        supabase.table("lgpd_consentimentos").upsert(dados, on_conflict="chat_id").execute()
+        logger.info(f"Consentimento LGPD registrado/atualizado para o chat_id {user_id}")
         return True
     except Exception as e:
-        print(f"⚠️ Erro ao registrar LGPD: {e}", flush=True)
+        logger.error(f"⚠️ Erro ao registrar LGPD: {e}")
         return False
 
 
 async def buscar_todas_regulacoes_ativas():
-    """Busca todas as regulações cadastradas para a varredura automática."""
-    try:
-        res = supabase.table(TABELA_SUPABASE).select("*").execute()
-        return res.data if res and res.data else []
-    except Exception as e:
-        print(f"❌ Erro na varredura geral Supabase: {e}", flush=True)
+    if not supabase:
         return []
+    try:
+        res = supabase.table(TABELA_SUPABASE).select("*").neq("ativo", False).execute()
+        return res.data if res and res.data else []
+    except Exception:
+        try:
+            res = supabase.table(TABELA_SUPABASE).select("*").execute()
+            return res.data if res and res.data else []
+        except Exception as e:
+            logger.error(f"❌ Erro na varredura geral Supabase: {e}")
+            return []
+
+
+def desativar_regulacoes_por_chat_id(chat_id):
+    """Marca como inativas as regulações de um chat_id que bloqueou o bot."""
+    if not supabase:
+        return False
+    try:
+        cid_str = str(chat_id)
+        cid_int = int(chat_id) if cid_str.isdigit() else chat_id
+
+        for col in ["chat_id", "id_do_chat"]:
+            for val in [cid_str, cid_int]:
+                try:
+                    supabase.table(TABELA_SUPABASE).update({"ativo": False}).eq(col, val).execute()
+                except Exception:
+                    continue
+        logger.info(f"🚫 Regulações do chat_id {chat_id} marcadas como inativas por bloqueio do usuário.")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao desativar regulações do chat_id {chat_id}: {e}")
+        return False

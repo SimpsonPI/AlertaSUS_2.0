@@ -11,10 +11,93 @@ from database import (
 )
 from utils import (
     DISCLAIMER_TEXTO, TECLADO_MENU, TECLADO_CANCELAR, CONSULTAR_ID,
-    _extrair_id_e_nome, mascarar_nome, _montar_msg_html, verificar_se_e_menu_e_executar
+    _extrair_id_e_nome, mascarar_nome, verificar_se_e_menu_e_executar
 )
 
 logger = logging.getLogger(__name__)
+
+def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None) -> str:
+    """
+    Gera a mensagem formatada em HTML para exibição no Telegram.
+    Prioriza avisos/orientações do portal da FMS em relação à 'Posição na Fila'.
+    """
+    cartao_sus = "Não informado"
+    nome_paciente = "Não informado"
+    cbo = "Não informado"
+    procedimento = "Não informado"
+
+    # Extração de dados cadastrais salvos na base local / Supabase
+    if reg_db:
+        if isinstance(reg_db, dict):
+            cartao_sus = reg_db.get("numero_sus") or reg_db.get("cartao_sus") or cartao_sus
+            nome_paciente = reg_db.get("nome_paciente") or nome_paciente
+            cbo = reg_db.get("cbo") or cbo
+            procedimento = reg_db.get("procedimento") or procedimento
+
+    nome_exibicao = mascarar_nome(nome_paciente) if callable(mascarar_nome) else nome_paciente
+
+    # Processamento do retorno do scraper / FMS
+    if isinstance(resultado, dict) and resultado.get("sucesso"):
+        situacao = resultado.get("situacao") or "Informada no portal"
+        posicao = resultado.get("posicao_fila") or "Não informada"
+        previsao = resultado.get("previsao_atendimento") or "Não informada"
+        alerta = resultado.get("alerta_fms") or resultado.get("alerta")
+        data_consulta = resultado.get("data_consulta")
+        estabelecimento = resultado.get("estabelecimento")
+        endereco = resultado.get("endereco")
+        telefone = resultado.get("telefone")
+    else:
+        situacao = "Não encontrada / Indisponível"
+        posicao = "Não informada"
+        previsao = "Não informada"
+        alerta = resultado.get("mensagem") if isinstance(resultado, dict) else None
+        data_consulta = None
+        estabelecimento = None
+        endereco = None
+        telefone = None
+
+    linhas = [
+        "📋 <b>STATUS DA REGULAÇÃO</b>",
+        "",
+        f"<b>ID Regulação:</b> <code>{escape(str(num_reg))}</code>",
+        f"<b>Cartão SUS:</b> <code>{escape(str(cartao_sus))}</code>",
+        f"<b>Paciente:</b> {escape(str(nome_exibicao))}",
+        f"<b>CBO:</b> {escape(str(cbo).upper())}",
+        f"<b>Procedimento:</b> {escape(str(procedimento).upper())}",
+        f"<b>Status:</b> {escape(str(situacao))}",
+    ]
+
+    # Caso exista agendamento confirmado
+    if data_consulta or estabelecimento:
+        linhas.append("")
+        linhas.append("📅 <b>DADOS DO AGENDAMENTO</b>")
+        if data_consulta:
+            linhas.append(f"• <b>Data/Hora:</b> {escape(str(data_consulta))}")
+        if estabelecimento:
+            linhas.append(f"• <b>Local:</b> {escape(str(estabelecimento))}")
+        if endereco:
+            linhas.append(f"• <b>Endereço:</b> {escape(str(endereco))}")
+        if telefone:
+            linhas.append(f"• <b>Telefone:</b> {escape(str(telefone))}")
+
+        if alerta and str(alerta).strip():
+            linhas.append("")
+            linhas.append(f"⚠️ <b>AVISO DO PORTAL:</b>\n<i>{escape(str(alerta.strip()))}</i>")
+    else:
+        # Se houver mensagem/aviso do portal (ex: cancelamento, comparecimento à UBS), exibe em destaque
+        if alerta and str(alerta).strip():
+            linhas.append("")
+            linhas.append(f"⚠️ <b>Mensagem do Portal:</b>\n<i>{escape(str(alerta.strip()))}</i>")
+        elif previsao and previsao != "Não informada":
+            linhas.append(f"<b>Previsão:</b> {escape(str(previsao))}")
+        else:
+            linhas.append(f"<b>Posição na Fila:</b> {escape(str(posicao))}")
+
+    if DISCLAIMER_TEXTO:
+        linhas.append("")
+        linhas.append(f"ℹ️ <i>{DISCLAIMER_TEXTO.strip()}</i>")
+
+    return "\n".join(linhas)
 
 async def _buscar_regulacao_por_id_reg(numero_reg: str):
     try:
@@ -129,7 +212,6 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
         num_reg = None
 
         if query:
-            # Responde o clique do botão imediatamente para remover o ícone de 'carregando' no Telegram
             await query.answer()
             data = query.data
 

@@ -32,14 +32,15 @@ from handler import (
     # Handlers base e automação
     start,
     comando_ajuda,
+    comando_privacidade,
     cancelar_operacao,
     configurar_menu_comandos,
-    executar_varredura_automatica,
+    executar_varredura_automatica, # 👈 Varredura interna que envia o alerta com Previsão de Atendimento
 
     # Consulta
-    comando_verificar_todas,
+    comando_verificar_todas,       # 👈 Exibe status + Previsão de Atendimento na lista
     iniciar_verificar_especifico,
-    processar_verificar_especifico,
+    processar_verificar_especifico, # 👈 Exibe detalhes + Previsão de Atendimento no card individual
 
     # Cadastro
     iniciar_cadastro_manual,
@@ -122,7 +123,7 @@ conv_cadastro = ConversationHandler(
     allow_reentry=True
 )
 
-# 2. Verificar Específico (Consulta Individual)
+# 2. Verificar Específico (Consulta Individual com Previsão)
 conv_verificar_especifico = ConversationHandler(
     entry_points=[
         MessageHandler(filters.Regex("(?i).*Verificar Espec[íi]fico.*"), iniciar_verificar_especifico),
@@ -194,7 +195,7 @@ conv_excluir = ConversationHandler(
 
 def main():
     # Inicializa a aplicação
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(configurar_menu_comandos).build()
 
     # 1. REGISTRO DOS CONVERSATION HANDLERS
     app.add_handler(conv_cadastro)
@@ -204,9 +205,23 @@ def main():
 
     # 2. COMANDOS SIMPLES E BOTÕES DO MENU PRINCIPAL
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Regex(r"^(🚀\s*)?(Início|Start)$"), start))
     app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(MessageHandler(filters.Regex(r"^(ℹ️\s*)?Ajuda$"), comando_ajuda)) # <-- ADICIONE ESTA LINHA
+    app.add_handler(CommandHandler("privacidade", comando_privacidade))
+    app.add_handler(MessageHandler(filters.Regex(r"^(📄\s*)?Privacidade$"), comando_privacidade)) # <-- Handler do botão Privacidade
     app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
     app.add_handler(CommandHandler("verificar_todas", comando_verificar_todas))
+
+    # 3. AGENDADOR DE VARREDURA AUTOMÁTICA (ALERTAS COM PREVISÃO DE ATENDIMENTO)
+    if app.job_queue:
+        # Executa a varredura a cada 7200 segundos (2 horas)
+        app.job_queue.run_repeating(
+            executar_varredura_automatica,
+            interval=7200,
+            first=10
+        )
+        logging.info("Agendador de varredura automática (2 horas) com alertas de previsão ativado!")
 
     logging.info("Bot AlertaSUS 2.0 iniciado com sucesso!")
     app.run_polling()

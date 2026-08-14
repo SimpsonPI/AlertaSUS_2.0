@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from telegram.helpers import escape_markdown
 from config import URL_BUSCA_FMS, SCRAPER_KEY
 
+logger = logging.getLogger(__name__)
+
 def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
     rotulo_normalizado = rotulo.strip().lower()
     for titulo in soup.find_all(["h4", "h5"]):
@@ -20,18 +22,50 @@ def _extrair_valor_campo_fms(soup: BeautifulSoup, rotulo: str) -> str | None:
                 return valor
     return None
 
+def _limpar_texto_alerta(alerta_bruto: str) -> str:
+    """Remove duplicidades internas, prefixos colados e formata a mensagem do portal."""
+    if not alerta_bruto:
+        return ""
+
+    # Remove ocorrências coladas como 'SituaçãoVencida' ou 'Situação: Vencida'
+    texto = re.sub(r"situação\s*:?\s*\w*", "", alerta_bruto, flags=re.IGNORECASE).strip()
+    
+    # Normaliza espaços
+    texto = re.sub(r"\s+", " ", texto)
+
+    # Identifica frases únicas e evita repetição idêntica
+    frases = [f.strip() for f in texto.split(".") if f.strip()]
+    frases_unicas = []
+    for f in frases:
+        if f.lower() not in [fu.lower() for fu in frases_unicas]:
+            frases_unicas.append(f)
+
+    return ". ".join(frases_unicas) + ("." if frases_unicas else "")
+
 def _extrair_dados_html(soup: BeautifulSoup) -> dict:
-    """Extrai e mapeia todos os campos da FMS (seja agendado ou em fila)."""
+    """Extrai e mapeia todos os campos da FMS com limpeza rigorosa de texto duplicado."""
     card = soup.find("div", class_="card-body") or soup
 
-    # 1. Captura de Alertas e Avisos em caixas de destaque
+    # 1. Captura de Alertas, Avisos e Observações
     alertas = [
         re.sub(r"\s+", " ", a.get_text(" ", strip=True))
-        for a in card.find_all("div", class_=re.compile(r"alert|bg-success|alert-success", re.I))
+        for a in card.find_all("div", class_=re.compile(r"alert|bg-success|alert-success|alert-danger|alert-warning|mensagem-observacao|obs", re.I))
     ]
-    alerta_texto = "\n".join(alertas) if alertas else None
+    
+    textos_observacao = []
+    for elem in card.find_all(["p", "span", "div"]):
+        txt = elem.get_text(strip=True)
+        if any(termo in txt.upper() for termo in ["SOLICITAÇÃO CANCELADA", "COMPAREÇA", "UNIDADE BASICA", "UBS", "ESCLARECIMENTOS"]):
+            textos_observacao.append(re.sub(r"\s+", " ", txt))
 
-    # 2. Varredura de Títulos (h4, h5, card-title)
+    # Junta todos os textos encontrados
+    todos_avisos = alertas + textos_observacao
+    alerta_concatenado = " ".join(todos_avisos) if todos_avisos else ""
+    
+    # Aplica a limpeza para tirar a duplicação
+    alerta_texto = _limpar_texto_alerta(alerta_concatenado) or None
+
+    # 2. Varredura de Títulos
     campos_brutos = {}
     dados_mapeados = {
         "data_consulta": None,
@@ -61,7 +95,6 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
                 campos_brutos[rotulo] = valor
                 rotulo_lower = rotulo.lower()
 
-                # Mapeamento dinâmico para chaves padronizadas
                 if "data e hora" in rotulo_lower:
                     dados_mapeados["data_consulta"] = valor
                 elif "autorização" in rotulo_lower:
@@ -79,7 +112,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
                 elif "previsão" in rotulo_lower:
                     dados_mapeados["previsao_atendimento"] = valor
 
-    # 3. Determinação da Situação do Agendamento
+    # 3. Determinação da Situação
     situacao = dados_mapeados["situacao"] or campos_brutos.get("Situação") or _extrair_valor_campo_fms(soup, "Situação")
 
     if not situacao:
@@ -92,12 +125,7 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
     dados_mapeados["posicao_fila"] = dados_mapeados["posicao_fila"] or campos_brutos.get("Posição da Fila") or _extrair_valor_campo_fms(soup, "Posição da Fila") or "Não informada"
     dados_mapeados["previsao_atendimento"] = dados_mapeados["previsao_atendimento"] or campos_brutos.get("Previsão de atendimento") or _extrair_valor_campo_fms(soup, "Previsão de atendimento") or "Não informada"
 
-    # Montagem do resumo de status
-    partes_resumo = [f"{k}: {v}" for k, v in campos_brutos.items()]
-    if alerta_texto:
-        partes_resumo.append(f"Alerta: {alerta_texto}")
-
-    status_resumido = " | ".join(partes_resumo) if partes_resumo else f"Situação: {situacao}"
+    status_resumido = f"Situação: {situacao}"
 
     return {
         "sucesso": True,
@@ -116,7 +144,6 @@ def _extrair_dados_html(soup: BeautifulSoup) -> dict:
     }
 
 def formatar_data_br(data_str: str | None) -> str:
-    """Converte datas de AAAA-MM-DD para DD/MM/AAAA"""
     if not data_str:
         return "Não informada"
     data_limpa = str(data_str).split("T")[0].strip()
@@ -132,7 +159,6 @@ def nome_paciente_exibicao(nome: str | None) -> str:
     return nome.strip()
 
 async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict:
-    # 🛡️ Proteção Antibloqueio / Anti-burst (Jitter)
     atraso = random.uniform(1.0, 2.0)
     await asyncio.sleep(atraso)
 
@@ -143,7 +169,6 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    # 🚀 1. TENTATIVA DIRETA AO PORTAL DA FMS (Resposta instantânea)
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=12.0, headers=headers) as client:
             resposta = await client.get(url_fms_target)
@@ -151,9 +176,8 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
                 soup = BeautifulSoup(resposta.text, "html.parser")
                 return _extrair_dados_html(soup)
     except Exception as e:
-        logging.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
+        logger.info(f"Acesso direto à FMS falhou ou bloqueou ({e}). Acionando ScraperAPI...")
 
-    # 🌐 2. FALLBACK VIA SCRAPERAPI
     if not SCRAPER_KEY:
         return {"sucesso": False, "mensagem": "Erro de configuração na chave do ScraperAPI."}
 
@@ -182,11 +206,21 @@ async def consultar_status_fms(numero_reg: str, max_tentativas: int = 2) -> dict
                 return _extrair_dados_html(soup)
 
         except (httpx.TimeoutException, httpx.RequestError) as e:
-            logging.warning(f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}")
+            logger.warning(f"Tentativa ScraperAPI {tentativa}/{max_tentativas} falhou (Reg {numero_reg}): {e}")
             if tentativa < max_tentativas:
                 await asyncio.sleep(2)
 
     return {"sucesso": False, "mensagem": "Tempo limite de conexão excedido ao acessar a FMS."}
+
+async def consultar_status_sus(numero_reg: str) -> str | None:
+    try:
+        resultado = await consultar_status_fms(numero_reg)
+        if isinstance(resultado, dict) and resultado.get("sucesso"):
+            return resultado.get("situacao") or "Informada no portal"
+        return None
+    except Exception as e:
+        logger.error(f"Erro na consulta simplificada de status SUS para {numero_reg}: {e}")
+        return None
 
 def montar_mensagem_regulacao(
     numero_reg: str,
@@ -222,7 +256,6 @@ def montar_mensagem_regulacao(
 
         linhas.append(f"📌 *Situação:* *{escape_markdown(str(situacao), version=1)}*")
 
-        # Se houver consulta agendada, constrói o bloco do agendamento
         if data_consulta or estabelecimento:
             linhas.append("")
             linhas.append("📅 *DADOS DO AGENDAMENTO*")
@@ -242,16 +275,15 @@ def montar_mensagem_regulacao(
 
             if alerta:
                 linhas.append("")
-                linhas.append(f"⚠️ *AVISO:* _{escape_markdown(str(alerta), version=1)}_")
+                linhas.append(f"⚠️ *AVISO DO PORTAL:* _{escape_markdown(str(alerta), version=1)}_")
         else:
-            # Dados padrão de regulação na fila
             posicao = resultado.get("posicao_fila") or "Não informada"
             previsao = resultado.get("previsao_atendimento") or "Não informada"
-            linhas.append(f"• *Posição da Fila:* {escape_markdown(str(posicao), version=1)}")
-            linhas.append(f"• *Previsão de atendimento:* {escape_markdown(str(previsao), version=1)}")
 
-            if alerta:
+            if alerta and alerta.strip():
                 linhas.append("")
-                linhas.append(f"⚠️ *AVISO:* _{escape_markdown(str(alerta), version=1)}_")
+                linhas.append(f"⚠️ *MENSAGEM DO PORTAL:*\n_{escape_markdown(str(alerta.strip()), version=1)}_")
+            else:
+                linhas.append(f"• *Posição da Fila:* {escape_markdown(str(posicao), version=1)}")
 
     return "\n".join(linhas)
