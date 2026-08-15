@@ -16,25 +16,46 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
+def _mascarar_nome_custom(nome: str) -> str:
+    """Retorna: Primeiro nome + iniciais. Ex: 'João Silva Santos' -> 'João S. S.'"""
+    if not nome or str(nome).lower() in ["none", "não informado", ""]:
+        return "Não informado"
+    partes = nome.strip().split()
+    if len(partes) <= 1:
+        return partes[0].capitalize()
+    
+    primeiro = partes[0].capitalize()
+    iniciais = [f"{p[0].upper()}." for p in partes[1:]]
+    return f"{primeiro} {' '.join(iniciais)}"
+
+def _mascarar_sus_custom(sus: str) -> str:
+    """Retorna: 3 primeiros + 3 últimos. Ex: '12345678912' -> '123*****912'"""
+    s = str(sus).strip()
+    if len(s) < 6:
+        return s
+    return f"{s[:3]}{'*' * 5}{s[-3:]}"
+
 def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None) -> str:
     """
     Gera a mensagem formatada em HTML para exibição no Telegram.
     Prioriza avisos/orientações do portal da FMS em relação à 'Posição na Fila'.
     """
-    cartao_sus = "Não informado"
-    nome_paciente = "Não informado"
+    cartao_sus_raw = ""
+    nome_paciente_raw = ""
     cbo = "Não informado"
     procedimento = "Não informado"
 
     # Extração de dados cadastrais salvos na base local / Supabase
     if reg_db:
         if isinstance(reg_db, dict):
-            cartao_sus = reg_db.get("numero_sus") or reg_db.get("cartao_sus") or cartao_sus
-            nome_paciente = reg_db.get("nome_paciente") or nome_paciente
+            cartao_sus_raw = reg_db.get("numero_sus") or reg_db.get("cartao_sus") or ""
+            nome_paciente_raw = reg_db.get("nome_paciente") or ""
             cbo = reg_db.get("cbo") or cbo
             procedimento = reg_db.get("procedimento") or procedimento
 
-    nome_exibicao = mascarar_nome(nome_paciente) if callable(mascarar_nome) else nome_paciente
+    # Aplicação de Máscaras
+    nome_exibicao = _mascarar_nome_custom(nome_paciente_raw)
+    cartao_sus_exibicao = _mascarar_sus_custom(cartao_sus_raw) if cartao_sus_raw else "Não informado"
 
     # Processamento do retorno do scraper / FMS
     if isinstance(resultado, dict) and resultado.get("sucesso"):
@@ -60,7 +81,7 @@ def _montar_msg_html(num_reg: str, resultado: dict, reg_db=None) -> str:
         "📋 <b>STATUS DA REGULAÇÃO</b>",
         "",
         f"<b>ID Regulação:</b> <code>{escape(str(num_reg))}</code>",
-        f"<b>Cartão SUS:</b> <code>{escape(str(cartao_sus))}</code>",
+        f"<b>Cartão SUS:</b> <code>{escape(str(cartao_sus_exibicao))}</code>",
         f"<b>Paciente:</b> {escape(str(nome_exibicao))}",
         f"<b>CBO:</b> {escape(str(cbo).upper())}",
         f"<b>Procedimento:</b> {escape(str(procedimento).upper())}",
