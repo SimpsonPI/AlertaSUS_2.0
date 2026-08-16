@@ -1,3 +1,6 @@
+
+
+
 # handlers_consultas.py
 import logging
 import re

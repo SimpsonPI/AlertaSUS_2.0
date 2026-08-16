@@ -1,225 +1,95 @@
-import os
-import logging
-from telegram.ext import (
-    ApplicationBuilder,
-    ConversationHandler, 
-    CommandHandler, 
-    MessageHandler, 
-    CallbackQueryHandler, 
-    filters
+import streamlit as st
+
+st.title("Painel Ativado com Sucesso!")
+st.write("Este é o seu novo dashboard Streamlit.")
+opcao = st.selectbox("Escolha uma opção:", ["Opção A", "Opção B"])
+st.write(f"Você selecionou: {opcao}")
+import streamlit as st
+import pandas as pd
+from supabase import create_client, Client
+
+# 1. Configuração da Página
+st.set_page_config(
+    page_title="AlertaSUS 2.0 - Painel",
+    page_icon="🏥",
+    layout="wide"
 )
 
-from config import TELEGRAM_BOT_TOKEN
+# 2. Conexão com o Supabase
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-# Importação centralizada de estados, handlers e utilitários a partir do handler.py
-from handler import (
-    # Estados de conversação
-    CONSULTAR_ID,
-    SELECIONAR_REGULACAO,
-    SELECIONAR_CAMPO,
-    AGUARDAR_NOVO_VALOR,
-    SELECIONAR_REGULACAO_EXCLUIR,
-    CONFIRMAR_EXCLUSAO,
-    ETAPA_SUS,
-    ETAPA_NOME,
-    ETAPA_CELULAR,
-    ETAPA_NASCIMENTO,
-    ETAPA_REGULACAO,
-    ETAPA_CBO,
-    ETAPA_PROCEDIMENTO,
-    ETAPA_LGPD,
+try:
+    supabase = init_supabase()
+except Exception as e:
+    st.error(f"Erro ao conectar no Supabase: {e}")
+    st.stop()
 
-    # Handlers base e automação
-    start,
-    comando_ajuda,
-    cancelar_operacao,
-    configurar_menu_comandos,
-    executar_varredura_automatica,
+# 3. Busca e Tratamento dos Dados
+@st.cache_data(ttl=30)
+def carregar_dados():
+    # Substitua 'regulacoes' abaixo caso o nome da tabela no menu esquerdo do Supabase seja outro
+    response = supabase.table("AlertaSUS_2.0").select("*").execute()
+    df = pd.DataFrame(response.data)
 
-    # Consulta
-    comando_verificar_todas,
-    iniciar_verificar_especifico,
-    processar_verificar_especifico,
+    if not df.empty:
+        # Formatação das datas para o padrão brasileiro DD/MM/AAAA
+        if "data_nascimento" in df.columns:
+            df["data_nascimento"] = pd.to_datetime(df["data_nascimento"], errors="coerce").dt.strftime("%d/%m/%Y")
+        
+        if "created_at" in df.columns:
+            df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
 
-    # Cadastro
-    iniciar_cadastro_manual,
-    receber_sus,
-    receber_nome,
-    receber_celular,
-    receber_nascimento,
-    receber_regulacao,
-    receber_cbo,
-    receber_procedimento,
-    finalizar_cadastro,
+    return df
 
-    # Correção
-    iniciar_corrigir,
-    selecionar_regulacao_callback,
-    selecionar_campo_callback,
-    salvar_novo_valor,
-    cancelar_corrigir,
+# --- TÍTULO E BOTÃO DE ATUALIZAR ---
+st.title("🏥 AlertaSUS 2.0 — Painel de Pacientes")
 
-    # Exclusão
-    iniciar_excluir,
-    selecionar_regulacao_excluir_callback,
-    confirmar_exclusao_callback,
-    cancelar_excluir,
-)
+col_btn1, col_btn2 = st.columns([8, 2])
+with col_btn2:
+    if st.button("🔄 Atualizar Dados", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-# Configuração do Sistema de Logs
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+df = carregar_dados()
 
-# --------------------------------------------------
-# HANDLERS DE CONVERSAÇÃO (CONVERSATION HANDLERS)
-# --------------------------------------------------
+if df.empty:
+    st.warning("Nenhum registro encontrado ou a tabela está sem permissão de leitura (RLS).")
+else:
+    # --- INDICADORES (KPIs) ---
+    st.markdown("---")
+    kpi1, kpi2, kpi3 = st.columns(3)
+    
+    kpi1.metric("Total de Registros", len(df))
+    kpi2.metric("Pacientes Únicos", df["nome_paciente"].nunique() if "nome_paciente" in df.columns else 0)
+    kpi3.metric("Números de Regulação", df["numero_reg"].nunique() if "numero_reg" in df.columns else 0)
 
-# 1. Cadastro Interativo no Telegram
-conv_cadastro = ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^➕ Cadastrar Nova$"), iniciar_cadastro_manual),
-        CommandHandler("cadastrar", iniciar_cadastro_manual)
-    ],
-    states={
-        ETAPA_SUS: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_sus)
-        ],
-        ETAPA_NOME: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome)
-        ],
-        ETAPA_CELULAR: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_celular)
-        ],
-        ETAPA_NASCIMENTO: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nascimento)
-        ],
-        ETAPA_REGULACAO: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_regulacao)
-        ],
-        ETAPA_CBO: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cbo)
-        ],
-        ETAPA_PROCEDIMENTO: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, receber_procedimento)
-        ],
-        ETAPA_LGPD: [
-            CallbackQueryHandler(finalizar_cadastro, pattern="^(aceitar_lgpd|cancelar_cadastro)$")
-        ]
-    },
-    fallbacks=[
-        CommandHandler("cancelar", cancelar_operacao),
-        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
-    ],
-    allow_reentry=True
-)
+    # --- FILTROS DE BUSCA ---
+    st.sidebar.header("🔍 Filtros")
+    busca_nome = st.sidebar.text_input("Buscar por Nome do Paciente:")
+    busca_reg = st.sidebar.text_input("Buscar por Nº Regulação:")
 
-# 2. Verificar Específico (Consulta Individual)
-conv_verificar_especifico = ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("(?i).*Verificar Espec[íi]fico.*"), iniciar_verificar_especifico),
-        CommandHandler("consultar", iniciar_verificar_especifico)
-    ],
-    states={
-        CONSULTAR_ID: [
-            CallbackQueryHandler(processar_verificar_especifico, pattern="^(ver_esp_|cancelar_ver_esp)"),
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_operacao),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, processar_verificar_especifico)
-        ]
-    },
-    fallbacks=[
-        CommandHandler("cancelar", cancelar_operacao),
-        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_operacao)
-    ],
-    allow_reentry=True
-)
+    df_filtrado = df.copy()
 
-# 3. Corrigir Dados (Central Interativa por Botões)
-conv_corrigir = ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^✏️ Corrigir ID$"), iniciar_corrigir),
-        CommandHandler("corrigir", iniciar_corrigir)
-    ],
-    states={
-        SELECIONAR_REGULACAO: [
-            CallbackQueryHandler(selecionar_regulacao_callback, pattern=".*")
-        ],
-        SELECIONAR_CAMPO: [
-            CallbackQueryHandler(selecionar_campo_callback, pattern=".*")
-        ],
-        AGUARDAR_NOVO_VALOR: [
-            MessageHandler(filters.Regex("^🚫 Cancelar Operação$"), cancelar_corrigir),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_novo_valor)
-        ]
-    },
-    fallbacks=[
-        CommandHandler("cancelar", cancelar_corrigir),
-        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_corrigir)
-    ],
-    allow_reentry=True
-)
+    if busca_nome:
+        df_filtrado = df_filtrado[df_filtrado["nome_paciente"].astype(str).str.contains(busca_nome, case=False, na=False)]
 
-# 4. Excluir Regulação Interativa
-conv_excluir = ConversationHandler(
-    entry_points=[
-        MessageHandler(filters.Regex("^🗑️ Excluir Regulação$"), iniciar_excluir),
-        CommandHandler("excluir", iniciar_excluir)
-    ],
-    states={
-        SELECIONAR_REGULACAO_EXCLUIR: [
-            CallbackQueryHandler(selecionar_regulacao_excluir_callback, pattern=".*")
-        ],
-        CONFIRMAR_EXCLUSAO: [
-            CallbackQueryHandler(confirmar_exclusao_callback, pattern=".*")
-        ]
-    },
-    fallbacks=[
-        CommandHandler("cancelar", cancelar_excluir),
-        MessageHandler(filters.Regex("(?i)cancelar|^🚫 Cancelar Operação$"), cancelar_excluir)
-    ],
-    allow_reentry=True
-)
+    if busca_reg:
+        df_filtrado = df_filtrado[df_filtrado["numero_reg"].astype(str).str.contains(busca_reg, case=False, na=False)]
 
-# --------------------------------------------------
-# MAIN (INICIALIZAÇÃO DO BOT)
-# --------------------------------------------------
+    # --- ORGANIZAÇÃO DA TABELA EXIBIDA ---
+    st.markdown("---")
+    st.subheader("📋 Lista de Regulações Cadastradas")
 
-def main():
-    # Inicializa a aplicação
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    # Organiza a ordem das colunas para melhor leitura
+    colunas_ordem = ["id", "nome_paciente", "numero_reg", "data_nascimento", "status_anterior", "celular", "email", "created_at"]
+    colunas_existentes = [col for col in colunas_ordem if col in df_filtrado.columns]
 
-    # 1. REGISTRO DOS CONVERSATION HANDLERS
-    app.add_handler(conv_cadastro)
-    app.add_handler(conv_verificar_especifico)
-    app.add_handler(conv_corrigir)
-    app.add_handler(conv_excluir)
-
-    # 2. COMANDOS SIMPLES E BOTÕES DO MENU PRINCIPAL
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(MessageHandler(filters.Regex("^📋 Verificar Todas$"), comando_verificar_todas))
-    app.add_handler(CommandHandler("verificar_todas", comando_verificar_todas))
-
-    # 3. AGENDADOR DE VARREDURA AUTOMÁTICA (ALERTAS PRIVADOS A CADA 2 HORAS)
-    if app.job_queue:
-        # Executa a varredura a cada 7200 segundos (2 horas)
-        app.job_queue.run_repeating(
-            executar_varredura_automatica,
-            interval=7200,
-            first=10
-        )
-        logging.info("Agendador de varredura automática (2 horas) ativado com sucesso!")
-
-    logging.info("Bot AlertaSUS 2.0 iniciado com sucesso!")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    st.dataframe(
+        df_filtrado[colunas_existentes],
+        use_container_width=True,
+        hide_index=True
+    )
