@@ -31,8 +31,9 @@ TECLADO_MENU = ReplyKeyboardMarkup(
     [
         ["📋 Verificar Todas", "🔍 Verificar Específico"],
         ["➕ Cadastrar Nova", "✏️ Corrigir ID"],
-        ["🗑️ Excluir Regulação", "ℹ️ Ajuda"],
-        ["🚀 Início", "📄 Privacidade"]  # <-- Botões adicionados aqui
+        ["🗑️ Excluir Regulação", "💎 Planos"],
+        ["ℹ️ Ajuda", "🚀 Início"],
+        ["📄 Privacidade"]
     ],
     resize_keyboard=True
 )
