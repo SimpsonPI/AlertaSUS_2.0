@@ -14,7 +14,8 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_EmfKUviMXVqMh3EhiI
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAEHC5-Fwcaqbq-SnnxiUT494OeziUQSP6k")
 
 # ID do Administrador para comandos restritos (/admin, /autorizar)
-ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "5242040324"))
+raw_admin_id = os.environ.get("ADMIN_CHAT_ID", "").strip()
+ADMIN_CHAT_ID = int(raw_admin_id) if raw_admin_id.isdigit() else 5242040324
 
 SCRAPER_KEY = os.environ.get("SCRAPER_KEY", "")
 PORT = int(os.environ.get("PORT", 10000))

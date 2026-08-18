@@ -131,6 +131,16 @@ async def _buscar_regulacao_por_id_reg(numero_reg: str):
         logger.error(f"Erro ao buscar regulação {numero_reg}: {e}")
         return None
 
+async def enviar_resposta(update: Update, texto: str, parse_mode="HTML", reply_markup=None):
+    """Responde de forma inteligente dependendo da origem da ação."""
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(texto, parse_mode=parse_mode, reply_markup=reply_markup)
+        except Exception:
+            await update.callback_query.message.reply_text(texto, parse_mode=parse_mode, reply_markup=reply_markup)
+    elif update.message:
+        await update.message.reply_text(texto, parse_mode=parse_mode, reply_markup=reply_markup)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     context.user_data.clear()
@@ -140,7 +150,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Eu ajudo você a acompanhar o status de suas regulações na FMS Piauí em tempo real.\n\n"
         f"{DISCLAIMER_TEXTO}\n\nEscolha uma opção no menu abaixo para começar:"
     )
-    await update.message.reply_text(mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
+    await enviar_resposta(update, mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
 
 async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = (
@@ -153,11 +163,11 @@ async def comando_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{DISCLAIMER_TEXTO}\n\n"
         "<i>Se precisar cancelar qualquer operação, clique em '🚫 Cancelar Operação' ou digite /cancelar.</i>"
     )
-    await update.message.reply_text(mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
+    await enviar_resposta(update, mensagem, parse_mode="HTML", reply_markup=TECLADO_MENU)
 
 async def cancelar_operacao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
-    await update.message.reply_text("❌ Operação cancelada com sucesso.", reply_markup=TECLADO_MENU)
+    await enviar_resposta(update, "❌ Operação cancelada com sucesso.", reply_markup=TECLADO_MENU)
     return ConversationHandler.END
 
 async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,16 +176,11 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
     if hasattr(regulacoes, "__await__"): regulacoes = await regulacoes
 
     if not regulacoes:
-        await update.message.reply_text(
-            "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\nUtilize a opção <b>➕ Cadastrar Nova</b> para cadastrar.",
-            parse_mode="HTML", reply_markup=TECLADO_MENU
-        )
+        await enviar_resposta(update, "ℹ️ <b>Você não possui nenhuma regulação cadastrada.</b>\nUtilize a opção <b>➕ Cadastrar Nova</b> para cadastrar.", parse_mode="HTML", reply_markup=TECLADO_MENU)
         return
 
-    msg_inicial = await update.message.reply_text(
-        f"🔄 Consultando <b>{len(regulacoes)}</b> regulação(ões) na FMS... Por favor, aguarde.",
-        parse_mode="HTML"
-    )
+    msg_inicial = "🔄 Consultando <b>{len(regulacoes)}</b> regulação(ões) na FMS... Por favor, aguarde."
+    await enviar_resposta(update, msg_inicial, parse_mode="HTML")
 
     for reg in regulacoes:
         num_reg, _, _ = _extrair_id_e_nome(reg)
@@ -186,12 +191,9 @@ async def comando_verificar_todas(update: Update, context: ContextTypes.DEFAULT_
             resultado = {"sucesso": False}
 
         msg_html = _montar_msg_html(num_reg, resultado, reg)
-        await update.message.reply_text(msg_html, parse_mode="HTML")
+        await enviar_resposta(update, msg_html, parse_mode="HTML")
 
-    try: await msg_inicial.delete()
-    except Exception: pass
-
-    await update.message.reply_text("✅ Consulta concluída!", reply_markup=TECLADO_MENU)
+    await enviar_resposta(update, "✅ Consulta concluída!", reply_markup=TECLADO_MENU)
 
 async def iniciar_verificar_especifico(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:

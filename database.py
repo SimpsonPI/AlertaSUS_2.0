@@ -1,259 +1,195 @@
 import os
 import logging
-import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-def formatar_data(texto: str) -> str:
-    """Converte a data digitada para YYYY-MM-DD (padrão aceito pelo PostgreSQL/Supabase)."""
-    nums = re.sub(r"\D", "", texto)
-    if len(nums) == 8:
-        dia, mes, ano = nums[:2], nums[2:4], nums[4:]
-        return f"{ano}-{mes}-{dia}"
-    elif "/" in texto:
-        partes = texto.split("/")
-        if len(partes) == 3 and len(partes[2]) == 4:
-            return f"{partes[2]}-{partes[1].zfill(2)}-{partes[0].zfill(2)}"
-    return texto
-
-# Nome padrão da tabela no Supabase
-TABELA_SUPABASE = "AlertaSUS_2.0"
-
-# Inicialização e Validação Estrita das Credenciais do Supabase
+# --- INICIALIZAÇÃO DA CONEXÃO SUPABASE ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    logger.critical("❌ CRÍTICO: 'SUPABASE_URL' ou 'SUPABASE_KEY' não configuradas no ambiente! O banco de dados não funcionará.")
-    supabase = None
-else:
+    raise ValueError("As variáveis SUPABASE_URL e SUPABASE_KEY precisam estar configuradas no .env")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# --- REGRAS E GESTÃO DE PLANOS E ASSINATURAS ---
+
+def verificar_assinatura_ativa(user_id: int) -> bool:
+    """Verifica se o usuário possui uma assinatura ativa no Supabase."""
     try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        logger.info("✅ Supabase inicializado com sucesso no database.py.")
+        res = supabase.table("assinaturas").select("*").eq("chat_id", str(user_id)).execute()
+
+        if not res.data:
+            return False
+
+        assinatura = res.data[0]
+
+        if assinatura.get("status") != "active":
+            return False
+
+        if assinatura.get("tipo_plano") == "cortesia":
+            return True
+
+        data_vencimento_str = assinatura.get("data_vencimento")
+        if not data_vencimento_str:
+            return False
+
+        vencimento = datetime.fromisoformat(data_vencimento_str.replace("Z", "+00:00"))
+        return datetime.now(timezone.utc) < vencimento
     except Exception as e:
-        logger.error(f"⚠️ Erro ao criar cliente Supabase: {e}")
-        supabase = None
+        logger.error(f"Erro ao verificar assinatura ativa para o ID {user_id}: {e}")
+        return False
 
 
-def _obter_tabelas():
-    return [TABELA_SUPABASE, "principal"]
+def ativar_ou_atualizar_assinatura(telegram_id: int, tipo_plano: str):
+    """Calcula as datas e faz o upsert na tabela de assinaturas usando as colunas corretas."""
+    try:
+        plano_lower = tipo_plano.lower()
+        if "degustacao" in plano_lower:
+            dias_validade = 7
+        elif "semestral" in plano_lower:
+            dias_validade = 180
+        elif "anual" in plano_lower:
+            dias_validade = 365
+        else:
+            dias_validade = 7
+
+        agora = datetime.now(timezone.utc)
+        vencimento = agora + timedelta(days=dias_validade)
+        
+        dados = {
+            "chat_id": str(telegram_id),
+            "tipo_plano": tipo_plano,
+            "status": "active",
+            "data_inicio": agora.isoformat(),
+            "data_vencimento": vencimento.isoformat()
+        }
+        
+        # O on_conflict aponta para a coluna 'chat_id' para atualizar se já existir
+        resposta = supabase.table("assinaturas").upsert(dados, on_conflict="chat_id").execute()
+        logger.info(f"Assinatura do plano '{tipo_plano}' atualizada para o chat_id: {telegram_id}")
+        return resposta.data if resposta else True
+    except Exception as e:
+        logger.error(f"Erro ao ativar ou atualizar assinatura para o ID {telegram_id}: {e}")
+        return None
 
 
-def _formatar_valor_campo(campo: str, valor: str) -> str:
-    txt = str(valor).strip()
-    if campo in ["data_nascimento", "dt_nascimento", "data_nac"]:
-        return formatar_data(txt)
-    return txt
+def ativar_ou_atualizar_assinatura(telegram_id: int, tipo_plano: str):
+    """
+    Calcula as datas de início e vencimento com base no plano escolhido
+    e faz o upsert na tabela de assinaturas do Supabase.
+    """
+    try:
+        dias_validade = calcular_dias_plano(tipo_plano)
+        agora = datetime.now(timezone.utc)
+        vencimento = agora + timedelta(days=dias_validade)
+        
+        dados = {
+            "telegram_id": telegram_id,
+            "plano": tipo_plano,
+            "status": "active",
+            "data_inicio": agora.isoformat(),
+            "data_vencimento": vencimento.isoformat()
+        }
+        
+        # Realiza o upsert com base na chave ou coluna de identificação (telegram_id)
+        resposta = supabase.table("assinaturas").upsert(dados, on_conflict="telegram_id").execute()
+        logger.info(f"Assinatura do plano '{tipo_plano}' atualizada para o usuário ID: {telegram_id}")
+        return resposta.data if resposta else True
+    except Exception as e:
+        logger.error(f"Erro ao ativar ou atualizar assinatura para o ID {telegram_id}: {e}")
+        return None
+
+    
+# --- FUNÇÕES DE OPERAÇÃO DE REGULAÇÕES E CADASTRO ---
+
+def buscar_todas_regulacoes_ativas():
+    """Busca todas as regulações cadastradas ativas no Supabase para varredura."""
+    try:
+        res = supabase.table("AlertaSUS_2.0").select("*").execute()
+        return res.data if res and res.data else []
+    except Exception as e:
+        logger.error(f"Erro ao buscar regulações ativas: {e}")
+        return []
 
 
 def buscar_regulacoes_por_chat_id(chat_id):
-    if not supabase:
-        return []
+    """Busca as regulações de um usuário específico, testando tipos diferentes."""
     try:
-        cid_int = int(chat_id) if str(chat_id).isdigit() else chat_id
-        cid_str = str(chat_id)
-
-        colunas_possiveis = ["chat_id", "id_do_chat", "telegram_id"]
-
-        for tabela in _obter_tabelas():
-            for col in colunas_possiveis:
-                for val in [cid_str, cid_int]:
-                    try:
-                        res = supabase.table(tabela).select("*").eq(col, val).execute()
-                        if res and res.data and len(res.data) > 0:
-                            return res.data
-                    except Exception:
-                        continue
-        return []
+        # Tenta como string
+        res = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", str(chat_id)).execute()
+        if res.data: return res.data
+        
+        # Tenta como número (caso a coluna seja int)
+        res = supabase.table("AlertaSUS_2.0").select("*").eq("chat_id", int(chat_id)).execute()
+        return res.data if res.data else []
     except Exception as e:
-        logger.error(f"❌ Erro ao buscar regulações por chat_id: {e}")
+        logger.error(f"Erro ao buscar regulações para o chat_id {chat_id}: {e}")
         return []
 
 
-def obter_regulacao_por_numero(numero_reg: str):
-    if not supabase or not numero_reg:
+def obter_regulacao_por_numero(num_reg: str):
+    """Busca uma regulação específica pelo número de regulação ou protocolo."""
+    try:
+        res = supabase.table("AlertaSUS_2.0").select("*").eq("numero_reg", str(num_reg)).execute()
+        if res.data:
+            return res.data[0]
+        
+        res_alt = supabase.table("AlertaSUS_2.0").select("*").eq("protocolo", str(num_reg)).execute()
+        return res_alt.data[0] if res_alt and res_alt.data else None
+    except Exception as e:
+        logger.error(f"Erro ao obter regulação por número ({num_reg}): {e}")
         return None
 
-    num_str = str(numero_reg).strip()
-    num_int = int(num_str) if num_str.isdigit() else None
 
-    for tabela in _obter_tabelas():
-        for col in ["numero_reg", "id", "id_regulacao", "numero_solicitacao"]:
-            for val in [num_str, num_int] if num_int is not None else [num_str]:
-                try:
-                    res = supabase.table(tabela).select("*").eq(col, val).execute()
-                    if res and res.data and len(res.data) > 0:
-                        return res.data[0]
-                except Exception:
-                    continue
-    return None
-
-
-def obter_regulacao_por_id(id_reg):
-    return obter_regulacao_por_numero(id_reg)
-
-
-async def salvar_regulacao(dados: dict) -> bool:
-    if not supabase:
-        return False
+def salvar_regulacao(dados_regulacao: dict):
+    """Salva uma nova regulação na tabela do Supabase."""
     try:
-        payload = {
-            "chat_id": str(dados.get("chat_id") or dados.get("id_do_chat")),
-            "numero_reg": dados.get("numero_reg") or dados.get("regulacao"),
-            "nome_paciente": dados.get("nome_paciente") or dados.get("nome"),
-            "status_anterior": dados.get("status_anterior") or "PENDENTE",
-            "data_nascimento": dados.get("data_nascimento") or dados.get("nascimento"),
-            "celular": dados.get("celular"),
-            "numero_sus": dados.get("numero_sus") or dados.get("sus"),
-            "cbo": dados.get("cbo"),
-            "procedimento": dados.get("procedimento")
-        }
-
-        resposta = supabase.table(TABELA_SUPABASE).insert(payload).execute()
-        
-        if resposta.data:
-            logger.info("Regulação salva com sucesso no Supabase!")
-            return True
-        return False
-
+        res = supabase.table("AlertaSUS_2.0").insert(dados_regulacao).execute()
+        return res.data if res and res.data else True
     except Exception as e:
-        logger.error(f"❌ Erro ao salvar regulação: {e}")
-        return False
+        logger.error(f"Erro ao salvar nova regulação: {e}")
+        return None
 
 
-def atualizar_campo_regulacao(reg_id, campo, novo_valor):
-    if not supabase:
-        return False
+def registrar_consentimento_lgpd(dados_consentimento: dict):
+    """Registra o termo de consentimento LGPD do usuário."""
     try:
-        reg_id_str = str(reg_id).strip()
-
-        if campo == "status_atual":
-            campo = "status_anterior"
-
-        novo_valor_formatado = _formatar_valor_campo(campo, novo_valor)
-
-        res = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("id", reg_id_str).execute()
-        if res.data and len(res.data) > 0:
-            return True
-
-        res_alt = supabase.table(TABELA_SUPABASE).update({campo: novo_valor_formatado}).eq("numero_reg", reg_id_str).execute()
-        if res_alt.data and len(res_alt.data) > 0:
-            return True
-
-        return False
+        res = supabase.table("lgpd_consentimentos").insert(dados_consentimento).execute()
+        return res.data if res and res.data else True
     except Exception as e:
-        logger.error(f"Erro ao executar UPDATE no Supabase: {e}")
-        return False
-
-
-def deletar_regulacao_por_id(chat_id, numero_reg):
-    if not supabase:
-        return False
-    try:
-        cid_int = int(chat_id) if str(chat_id).isdigit() else chat_id
-        cid_str = str(chat_id)
-        num_str = str(numero_reg)
-
-        for col in ["chat_id", "id_do_chat"]:
-            for val in [cid_str, cid_int]:
-                try:
-                    resposta = (
-                        supabase.table(TABELA_SUPABASE)
-                        .delete()
-                        .eq(col, val)
-                        .eq("numero_reg", num_str)
-                        .execute()
-                    )
-                    if resposta and resposta.data:
-                        return True
-                except Exception:
-                    continue
+        logger.error(f"Erro ao registrar consentimento LGPD: {e}")
         return True
+
+
+def atualizar_campo_regulacao(num_reg: str, campo: str, valor: str):
+    """Atualiza um determinado campo de uma regulação específica."""
+    try:
+        res = supabase.table("AlertaSUS_2.0").update({campo: valor}).eq("numero_reg", str(num_reg)).execute()
+        return res.data
     except Exception as e:
-        logger.error(f"❌ Erro ao deletar regulação {numero_reg}: {e}")
-        return False
+        logger.error(f"Erro ao atualizar o campo {campo} da regulação {num_reg}: {e}")
+        return None
 
 
-async def excluir_regulacao_db(reg_id) -> bool:
-    if not supabase:
-        return False
+def excluir_regulacao_db(num_reg: str):
+    """Exclui uma regulação do banco de dados pelo seu número/protocolo."""
     try:
-        num_str = str(reg_id).strip()
-        num_int = int(num_str) if num_str.isdigit() else None
-
-        for col in ["numero_reg", "id"]:
-            valores_busca = [num_str, num_int] if num_int is not None else [num_str]
-            for val in valores_busca:
-                try:
-                    resposta = supabase.table(TABELA_SUPABASE).delete().eq(col, val).execute()
-                    if resposta and resposta.data:
-                        return True
-                except Exception:
-                    continue
-        return False
+        res = supabase.table("AlertaSUS_2.0").delete().eq("numero_reg", str(num_reg)).execute()
+        return res.data if res and res.data else True
     except Exception as e:
-        logger.error(f"❌ Erro ao excluir regulação do Supabase: {e}")
-        return False
+        logger.error(f"Erro ao excluir regulação {num_reg}: {e}")
+        return None
 
 
-from datetime import datetime, timezone, timedelta
-
-async def registrar_consentimento_lgpd(user_id, aceito: bool = True) -> bool:
-    if not supabase:
-        return False
+def desativar_regulacoes_por_chat_id(chat_id: int):
+    """Desativa ou remove monitoramentos associados a um chat ID que bloqueou o bot."""
     try:
-        # Define o fuso horário do Brasil (UTC-3)
-        fuso_brasil = timezone(timedelta(hours=-3))
-        agora_brasil = datetime.now(fuso_brasil).isoformat()
-
-        dados = {
-            "chat_id": str(user_id),
-            "termo_aceito": aceito,
-            "data_aceito": agora_brasil  # Garante o registro na hora local
-        }
-        
-        # Como o 'chat_id' é Unique agora, o upsert funciona perfeitamente sem duplicar
-        supabase.table("lgpd_consentimentos").upsert(dados, on_conflict="chat_id").execute()
-        logger.info(f"Consentimento LGPD registrado/atualizado para o chat_id {user_id}")
-        return True
-    except Exception as e:
-        logger.error(f"⚠️ Erro ao registrar LGPD: {e}")
-        return False
-
-
-async def buscar_todas_regulacoes_ativas():
-    if not supabase:
-        return []
-    try:
-        res = supabase.table(TABELA_SUPABASE).select("*").neq("ativo", False).execute()
-        return res.data if res and res.data else []
-    except Exception:
-        try:
-            res = supabase.table(TABELA_SUPABASE).select("*").execute()
-            return res.data if res and res.data else []
-        except Exception as e:
-            logger.error(f"❌ Erro na varredura geral Supabase: {e}")
-            return []
-
-
-def desativar_regulacoes_por_chat_id(chat_id):
-    """Marca como inativas as regulações de um chat_id que bloqueou o bot."""
-    if not supabase:
-        return False
-    try:
-        cid_str = str(chat_id)
-        cid_int = int(chat_id) if cid_str.isdigit() else chat_id
-
-        for col in ["chat_id", "id_do_chat"]:
-            for val in [cid_str, cid_int]:
-                try:
-                    supabase.table(TABELA_SUPABASE).update({"ativo": False}).eq(col, val).execute()
-                except Exception:
-                    continue
-        logger.info(f"🚫 Regulações do chat_id {chat_id} marcadas como inativas por bloqueio do usuário.")
-        return True
+        res = supabase.table("AlertaSUS_2.0").update({"ativa": False}).eq("telegram_id", str(chat_id)).execute()
+        return res.data
     except Exception as e:
         logger.error(f"Erro ao desativar regulações do chat_id {chat_id}: {e}")
-        return False
+        return None

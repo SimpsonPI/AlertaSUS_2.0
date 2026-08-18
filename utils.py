@@ -141,7 +141,13 @@ async def verificar_se_e_menu_e_executar(update, context) -> bool:
     if not update.message or not update.message.text:
         return False
     texto = update.message.text.strip()
-    opcoes = ["📋 Verificar Todas", "🔍 Verificar Específico", "➕ Cadastrar Nova", "✏️ Corrigir ID", "🗑️ Excluir Regulação", "ℹ️ Ajuda", "🚫 Cancelar Operação"]
+    opcoes = [
+        "📋 Verificar Todas", "🔍 Verificar Específico", 
+        "➕ Cadastrar Nova", "✏️ Corrigir ID", 
+        "🗑️ Excluir Regulação", "ℹ️ Ajuda", 
+        "🚀 Início", "📄 Privacidade", "💎 Planos", 
+        "🚫 Cancelar Operação"
+    ]
     if texto in opcoes:
         context.user_data.clear()
         msg_resp = "❌ Operação cancelada com sucesso." if "cancelar" in texto.lower() else "Saindo da operação atual..."
