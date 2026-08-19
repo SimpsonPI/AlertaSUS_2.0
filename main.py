@@ -1,153 +1,175 @@
-import os
 import logging
-from dotenv import load_dotenv
-from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder, 
-    CommandHandler, 
-    MessageHandler, 
+    ApplicationBuilder,
     CallbackQueryHandler,
+    CommandHandler,
+    ConversationHandler,
+    MessageHandler,
     filters,
-    ContextTypes
 )
+from telegram.request import HTTPXRequest
+
+from config import TELEGRAM_BOT_TOKEN
 from handler import (
-    start, 
-    comando_ajuda, 
-    comando_privacidade, 
     comando_planos,
+    comando_privacidade,
+    comando_verificar_todas,
+    conv_cadastro,
+    conv_consulta_especifica,
+    conv_corrigir,
+    conv_excluir,
     detalhar_plano,
-    comando_verificar_todas, 
-    configurar_menu_comandos, 
-    executar_varredura_automatica, 
-    conv_consulta_especifica, 
-    conv_cadastro, 
-    conv_corrigir, 
-    conv_excluir, 
-    tratar_menu_interativo,
-    iniciar_verificar_especifico,
     iniciar_cadastro_manual,
     iniciar_corrigir,
-    iniciar_excluir
+    iniciar_excluir,
+    iniciar_verificar_especifico,
+    processar_pix_callback,
+    start,
+    tratar_menu_interativo,
 )
-from src.handlers_admin import comando_conceder_cortesia, comando_remover_cortesia
-from src.handlers_pagamento import gerar_pagamento_pix
+# Importações da Central de Suporte Automatizada por Tickets
+from suporte import (
+    AGUARDANDO_MENSAGEM,
+    cancelar_suporte,
+    conv_suporte,
+    menu_suporte,
+    receber_mensagem_suporte,
+    responder_chamado_admin,
+)
 
-# Carrega as variáveis do arquivo .env
-load_dotenv()
+# Importações dos handlers de administração
+from handler_admin import (
+    comando_conceder_cortesia,
+    comando_remover_cortesia,
+)
 
-# Configuração de logs
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
 )
+logger = logging.getLogger(__name__)  # <-- ESTA LINHA ADICIONADA AQUI RESOLVE TUDO!
 
-async def roteador_callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-
-    print(f"👉 1. ROTEADOR RECEBEU: {data}")
-
-    if data == "verificar_todos":
-        await comando_verificar_todas(update, context)
-    elif data == "verificar_especifico":
-        await iniciar_verificar_especifico(update, context)
-    elif data == "cadastrar_nova":
-        await iniciar_cadastro_manual(update, context)
-    elif data == "corrigir":
-        await iniciar_corrigir(update, context)
-    elif data == "planos":
-        await comando_planos(update, context)
-    elif data in ["plano_degustacao", "plano_semestral", "plano_anual"]:
-        print(f"👉 2. ENTROU NO ELIF DE PLANOS PARA: {data}")
-        await detalhar_plano(update, context)
-        print("👉 3. SAIU DE DETALHAR_PLANO")
-    elif data == "excluir":
-        await iniciar_excluir(update, context)
-    elif data == "privacidade":
-        await comando_privacidade(update, context)
-    elif data == "ajuda":
-        await comando_ajuda(update, context)
-    elif data == "iniciar":
-        await start(update, context)
-    else:
-        print(f"⚠️ CALLBACK DESCONHECIDO: {data}")
-
-async def post_init(application):
-    await configurar_menu_comandos(application)
 
 def main():
-    token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
-    
-    if not token:
-        raise ValueError("❌ ERRO: NENHUM TOKEN (TELEGRAM_BOT_TOKEN) FOI ENCONTRADO NO ARQUIVO .ENV!")
+    # Configura tempos limite para conexões instáveis e previne o erro TimedOut
+    request_config = HTTPXRequest(
+        connect_timeout=20.0,
+        read_timeout=20.0,
+        write_timeout=20.0,
+        pool_timeout=20.0,
+    )
 
-    app = ApplicationBuilder().token(token).post_init(post_init).build()
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .request(request_config)
+        .build()
+    )
 
-    # 1. CONVERSAÇÕES
+    # 1. Fluxos Conversacionais
     app.add_handler(conv_consulta_especifica)
     app.add_handler(conv_cadastro)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
+    app.add_handler(conv_suporte)
 
-    # 2. COMANDOS
+    # 2. Comandos Principais
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
+    app.add_handler(CommandHandler("cadastrar_nova", iniciar_cadastro_manual))
+    app.add_handler(CommandHandler("verificar_todos", comando_verificar_todas))
+    app.add_handler(CommandHandler("verificar_especifico", iniciar_verificar_especifico))
+    app.add_handler(CommandHandler("corrigir", iniciar_corrigir))
+    app.add_handler(CommandHandler("excluir", iniciar_excluir))
     app.add_handler(CommandHandler("planos", comando_planos))
-    app.add_handler(CommandHandler("ajuda", comando_ajuda))
+    app.add_handler(CommandHandler("privacidade", comando_privacidade))
+    app.add_handler(CommandHandler("ajuda", menu_suporte))
+    app.add_handler(CommandHandler("suporte", menu_suporte))
 
-    # 3. HANDLER DE BOTÕES
-    app.add_handler(CallbackQueryHandler(gerar_pagamento_pix, pattern="^pix_"))
-    app.add_handler(CallbackQueryHandler(roteador_callback_menu))
+    # 3. Comandos Administrativos
+    app.add_handler(CommandHandler("responder", responder_chamado_admin))
+    app.add_handler(CommandHandler("conceder", comando_conceder_cortesia))
+    app.add_handler(CommandHandler("remover", comando_remover_cortesia))
 
-    # 4. MENSAGENS DE TEXTO
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_menu_interativo))
+    # 4. Callbacks de Botões Inline
+    app.add_handler(CallbackQueryHandler(detalhar_plano, pattern="^plano_"))
+    app.add_handler(CallbackQueryHandler(processar_pix_callback, pattern="^pix_"))
 
-    # Job Queue
-    if app.job_queue:
-        app.job_queue.run_repeating(executar_varredura_automatica, interval=7200, first=10)
-
-    print("🤖 Bot iniciado com sucesso!")
+    # Inicia o bot (DEVE estar recuado dentro do def main)
+    logger.info("Bot iniciado com sucesso!")
     app.run_polling()
 
-    # 1. FLUXOS CONVERSACIONAIS
+
+if __name__ == "__main__":
+    main()
+
+    # 1. FLUXOS CONVERSACIONAIS (Conversations)
     app.add_handler(conv_consulta_especifica)
     app.add_handler(conv_cadastro)
     app.add_handler(conv_corrigir)
     app.add_handler(conv_excluir)
-
-    # 1. COMANDOS DE ADMINISTRAÇÃO (Coloque no topo!)
-    app.add_handler(CommandHandler("conceder_cortesia", comando_conceder_cortesia))
-    app.add_handler(CommandHandler("cortesia", comando_conceder_cortesia))
-    app.add_handler(CommandHandler("remover_cortesia", comando_remover_cortesia))
     
-    # 2. COMANDOS DIRETOS ( /comando )
+    # Adiciona o fluxo de suporte vindo do suporte.py
+    app.add_handler(conv_suporte)
+
+    # 2. COMANDOS DE ADMINISTRAÇÃO
+    app.add_handler(
+        CommandHandler("conceder_cortesia", comando_conceder_cortesia)
+    )
+    app.add_handler(CommandHandler("cortesia", comando_conceder_cortesia))
+    app.add_handler(
+        CommandHandler("remover_cortesia", comando_remover_cortesia)
+    )
+    app.add_handler(CommandHandler("responder", responder_chamado_admin))
+
+    # 3. COMANDOS DIRETOS (/comando)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("iniciar", start))
     app.add_handler(CommandHandler("verificar_todos", comando_verificar_todas))
-    app.add_handler(CommandHandler("verificar_especifico", iniciar_verificar_especifico))
+    app.add_handler(
+        CommandHandler("verificar_especifico", iniciar_verificar_especifico)
+    )
     app.add_handler(CommandHandler("cadastrar_nova", iniciar_cadastro_manual))
     app.add_handler(CommandHandler("corrigir", iniciar_corrigir))
     app.add_handler(CommandHandler("planos", comando_planos))
     app.add_handler(CommandHandler("excluir", iniciar_excluir))
     app.add_handler(CommandHandler("privacidade", comando_privacidade))
-    app.add_handler(CommandHandler("ajuda", comando_ajuda))
-    app.add_handler(CommandHandler("pix", gerar_pagamento_pix))
+    app.add_handler(CommandHandler("ajuda", menu_suporte))
+    app.add_handler(CommandHandler("suporte", menu_suporte))
+
+    # 4. BOTÕES E CALLBACKS DO MENU / SUPORTE
+    app.add_handler(CallbackQueryHandler(detalhar_plano, pattern="^plano_"))
+    app.add_handler(
+        CallbackQueryHandler(processar_pix_callback, pattern="^pix_")
+    )
+    app.add_handler(CallbackQueryHandler(comando_planos, pattern="^planos$"))
+    app.add_handler(CallbackQueryHandler(start, pattern="^iniciar$"))
+    app.add_handler(
+        CallbackQueryHandler(
+            comando_verificar_todas, pattern="^verificar_todos$"
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            comando_privacidade, pattern="^privacidade$"
+        )
+    )
+    app.add_handler(CallbackQueryHandler(menu_suporte, pattern="^ajuda$"))
     
-    app.add_handler(CommandHandler("conceder_cortesia", comando_conceder_cortesia))
-    app.add_handler(CommandHandler("cortesia", comando_conceder_cortesia))  # Atalho mais curto
-    app.add_handler(CommandHandler("remover_cortesia", comando_remover_cortesia))
 
-    # 3. CAPTURA DOS BOTÕES DE PAGAMENTO PIX
-    app.add_handler(CallbackQueryHandler(gerar_pagamento_pix, pattern="^pix_"))
+    # 5. MENSAGENS DE TEXTO (Desativado pois agora usamos comandos nativos nos botões)
+    
+    # Inicia o bot
+    app.run_polling()
 
-    # 4. CAPTURA GERAL DE BOTÕES INLINE DO MENU E PLANOS (Sem restrição de pattern)
-    app.add_handler(CallbackQueryHandler(roteador_callback_menu))
 
-    # 5. MENSAGENS DE TEXTO (Sempre por último para não bloquear os botões)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, tratar_menu_interativo))
+if __name__ == "__main__":
+    main()
+    
 
     # Inicia o bot
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()

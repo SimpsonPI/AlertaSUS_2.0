@@ -41,7 +41,7 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
         "description": f"AlertaSUS 2.0 - {nome_plano}",
         "payment_method_id": "pix",
         "payer": {
-            "email": f"user_{user_id}@alertasus.com",
+            "email": f"cliente_{user_id}@gmail.com",
             "first_name": first_name,
             "last_name": last_name
         },
@@ -51,7 +51,6 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         result = sdk.payment().create(payment_data)
         
-        # 👇 DIAGNÓSTICO: Log detalhado do retorno da API para ver no Railway
         print("--------------------------------------------------")
         print("LOG MERCADO PAGO STATUS CODE:", result.get("status"))
         print("LOG MERCADO PAGO RESPONSE:", result.get("response"))
@@ -70,14 +69,14 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
         qr_code_base64 = transaction_data.get("qr_code_base64")
         mp_payment_id = payment["id"]
 
-        # Registra / Atualiza assinatura pendente no Supabase
-        supabase.table("assinaturas").upsert({
+        # Registra o Pix na tabela isolada 'pagamentos_pix' sem afetar 'assinaturas'
+        supabase.table("pagamentos_pix").insert({
             "chat_id": str(user_id),
+            "pix_id": str(mp_payment_id),
+            "valor": float(valor),
             "tipo_plano": plano_chave,
-            "status": "pending",
-            "mp_payment_id": str(mp_payment_id),
-            "data_vencimento": datetime.utcnow().isoformat()
-        }, on_conflict="chat_id").execute()
+            "status": "pending"
+        }).execute()
 
         legenda_mensagem = (
             f"💳 <b>{nome_plano.upper()} - AlertaSUS 2.0</b>\n\n"
@@ -86,7 +85,6 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Aponte a câmera do seu banco para o QR Code acima ou utilize o código Copia e Cola abaixo:"
         )
 
-        # Se houver imagem do QR Code em Base64, converte e envia como foto
         if qr_code_base64:
             img_bytes = base64.b64decode(qr_code_base64)
             img_io = io.BytesIO(img_bytes)
@@ -105,7 +103,6 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
                 parse_mode="HTML"
             )
 
-        # Envia o código Copia e Cola em bloco de texto copiável
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"`{pix_copia_cola}`",

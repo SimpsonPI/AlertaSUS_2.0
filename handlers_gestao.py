@@ -4,12 +4,12 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes, ConversationHandler
 
 from database import (
+    supabase,
     buscar_regulacoes_por_chat_id as buscar_regulacoes_por_usuario,
     excluir_regulacao_db,
     atualizar_campo_regulacao
 )
 from utils import (
-    TECLADO_MENU,
     _extrair_id_e_nome,
     mascarar_nome,
     SELECIONAR_REGULACAO,
@@ -118,14 +118,24 @@ async def _deletar_mensagem_formulario(update: Update, context: ContextTypes.DEF
 async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id = update.effective_user.id
+
+        # Captura de mensagem universal (funciona para CallbackQuery e Message)
+        mensagem = update.message or (update.callback_query.message if update.callback_query else None)
+        
+        if not mensagem:
+            return ConversationHandler.END
+
+        # Se veio de um CallbackQuery, confirma o clique para fechar o status de carregamento
+        if update.callback_query:
+            await update.callback_query.answer()
+
         regulacoes = buscar_regulacoes_por_usuario(user_id)
         if hasattr(regulacoes, "__await__"): 
             regulacoes = await regulacoes
 
         if not regulacoes:
-            await update.message.reply_text(
-                "⚠️ Você não possui nenhuma regulação cadastrada para corrigir.",
-                reply_markup=TECLADO_MENU
+            await mensagem.reply_text(
+                "⚠️ Você não possui nenhuma regulação cadastrada para corrigir."
             )
             return ConversationHandler.END
 
@@ -139,7 +149,8 @@ async def iniciar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_corr")])
 
-        msg = await update.message.reply_text(
+        # Envia a mensagem com segurança através da variável 'mensagem'
+        msg = await mensagem.reply_text(
             "✏️ <b>Selecione qual regulação deseja corrigir:</b>",
             reply_markup=InlineKeyboardMarkup(teclado),
             parse_mode="HTML"
@@ -158,7 +169,7 @@ async def selecionar_regulacao_callback(update: Update, context: ContextTypes.DE
 
     if query.data == "cancelar_corr":
         await _deletar_mensagem_formulario(update, context)
-        await query.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
+        await query.message.reply_text("❌ Operação de correção cancelada.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -196,7 +207,7 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
 
     if data == "cancelar_corr":
         await _deletar_mensagem_formulario(update, context)
-        await query.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
+        await query.message.reply_text("❌ Operação de correção cancelada.")
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -219,9 +230,9 @@ async def selecionar_campo_callback(update: Update, context: ContextTypes.DEFAUL
         await _deletar_mensagem_formulario(update, context)
 
         if erros == 0:
-            await query.message.reply_text(f"✅ <b>Todas as alterações da regulação <code>{escape(str(num_reg))}</code> foram salvas com sucesso!</b>", parse_mode="HTML", reply_markup=TECLADO_MENU)
+            await query.message.reply_text(f"✅ <b>Todas as alterações da regulação <code>{escape(str(num_reg))}</code> foram salvas com sucesso!</b>", parse_mode="HTML")
         else:
-            await query.message.reply_text("⚠️ Algumas alterações podem não ter sido salvas. Verifique o banco de dados.", reply_markup=TECLADO_MENU)
+            await query.message.reply_text("⚠️ Algumas alterações podem não ter sido salvas. Verifique o banco de dados.")
 
         context.user_data.clear()
         return ConversationHandler.END
@@ -261,7 +272,7 @@ async def salvar_novo_valor(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _deletar_mensagem_formulario(update, context)
     context.user_data.clear()
-    await update.message.reply_text("❌ Operação de correção cancelada.", reply_markup=TECLADO_MENU)
+    await update.message.reply_text("❌ Operação de correção cancelada.")
     return ConversationHandler.END
 
 
@@ -272,34 +283,44 @@ async def cancelar_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def iniciar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         user_id = update.effective_user.id
+
+        # Captura o canal de mensagem correto (funciona para Texto e Clique em Botão)
+        mensagem = update.message or (update.callback_query.message if update.callback_query else None)
+        
+        if not mensagem:
+            return ConversationHandler.END
+
+        # Se a chamada veio de um botão Inline, confirma o clique
+        if update.callback_query:
+            await update.callback_query.answer()
+
         regulacoes = buscar_regulacoes_por_usuario(user_id)
         if hasattr(regulacoes, "__await__"): 
             regulacoes = await regulacoes
 
         if not regulacoes:
-            await update.message.reply_text(
-                "⚠️ Você não possui nenhuma regulação cadastrada para excluir.",
-                reply_markup=TECLADO_MENU
+            await mensagem.reply_text(
+                "⚠️ Você não possui nenhuma regulação cadastrada para excluir."
             )
             return ConversationHandler.END
 
         teclado = []
         for r in regulacoes:
-            db_id = r.get("id") or r.get("id_regulacao") or r.get("numero_regulacao")
             num, nome, cbo = _extrair_id_e_nome(r)
-            
             cbo_str = f" ({cbo.strip().upper()})" if cbo and str(cbo).strip().upper() not in ["NONE", "N/A", ""] else ""
             rotulo = f"🗑️ {num} - {mascarar_nome(nome)}{cbo_str}"
 
-            teclado.append([InlineKeyboardButton(rotulo, callback_data=f"excl_reg_{db_id}")])
+            teclado.append([InlineKeyboardButton(rotulo, callback_data=f"excl_reg_{num}")])
 
         teclado.append([InlineKeyboardButton("❌ Cancelar", callback_data="cancelar_excl")])
 
-        await update.message.reply_text(
-            "🗑️ <b>Selecione qual regulação deseja excluir:</b>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(teclado)
+        # Responde usando a variável 'mensagem' que nunca será None
+        msg = await mensagem.reply_text(
+            "🗑️ <b>Selecione qual regulação deseja EXCLUIR:</b>\n<i>Esta ação não poderá ser desfeita!</i>",
+            reply_markup=InlineKeyboardMarkup(teclado),
+            parse_mode="HTML"
         )
+        context.user_data["excl_msg_id"] = msg.message_id
         return SELECIONAR_REGULACAO_EXCLUIR
 
     except Exception as e:
@@ -313,7 +334,6 @@ async def selecionar_regulacao_excluir_callback(update: Update, context: Context
 
     if query.data == "cancelar_excl":
         await query.edit_message_text("❌ Operação de exclusão cancelada.")
-        await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -350,7 +370,6 @@ async def confirmar_exclusao_callback(update: Update, context: ContextTypes.DEFA
     else:
         await query.edit_message_text("❌ Exclusão cancelada.")
 
-    await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
     context.user_data.clear()
     return ConversationHandler.END
 
@@ -360,7 +379,6 @@ async def cancelar_excluir(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text("❌ Exclusão cancelada.")
-        await update.callback_query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
     else:
-        await update.message.reply_text("❌ Exclusão cancelada.", reply_markup=TECLADO_MENU)
+        await update.message.reply_text("❌ Exclusão cancelada.")
     return ConversationHandler.END

@@ -3,28 +3,30 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# Garante que o arquivo .env seja lido do disco
+# Carrega estritamente o arquivo .env
 load_dotenv()
 
-# Variáveis de Ambiente
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://nvuvyebrbnoldtimkozb.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_EmfKUviMXVqMh3EhiIPD4g_GnOqQlos")
+# Variáveis de Ambiente sem valores padrão sensíveis no código
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# ⚠️ COLE O SEU NOVO TOKEN GERADO NO BOTFATHER AQUI ABAIXO:
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8988706536:AAEHC5-Fwcaqbq-SnnxiUT494OeziUQSP6k")
+# IDs de Administração
+raw_admin_id = os.getenv("ADMIN_CHAT_ID", "").strip()
+ADMIN_CHAT_ID = int(raw_admin_id) if raw_admin_id.isdigit() else None
 
-# ID do Administrador para comandos restritos (/admin, /autorizar)
-raw_admin_id = os.environ.get("ADMIN_CHAT_ID", "").strip()
-ADMIN_CHAT_ID = int(raw_admin_id) if raw_admin_id.isdigit() else 5242040324
+raw_admin_ids = os.getenv("ADMIN_IDS", "").strip()
+ADMIN_IDS = [int(x.strip()) for x in raw_admin_ids.split(",") if x.strip().isdigit()]
 
-SCRAPER_KEY = os.environ.get("SCRAPER_KEY", "")
-PORT = int(os.environ.get("PORT", 10000))
+SCRAPER_KEY = os.getenv("SCRAPER_KEY", "")
+PORT = int(os.getenv("PORT", 10000))
 
 # URL Base do Formulário WebApp no GitHub Pages
 URL_FORMULARIO_PAGES = "https://simpsonpi.github.io/alerta-sus-bot/"
 
+# Validação das variáveis obrigatórias
 if not TELEGRAM_BOT_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Verifique as variáveis de ambiente no arquivo .env ou no painel do servidor!")
+    raise ValueError("⚠️ ERRO CRÍTICO: Variáveis TELEGRAM_BOT_TOKEN, SUPABASE_URL ou SUPABASE_KEY não configuradas no arquivo .env!")
 
 # Cliente Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)

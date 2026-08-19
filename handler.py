@@ -95,9 +95,9 @@ VARREDURA_INTERVALO_MINUTOS = 120
 logger = logging.getLogger(__name__)
 
 
-# --- MENU PRINCIPAL (REMOVIDO OS BOTÕES INTERATIVOS) ---
+# --- REMOÇÃO DO MENU FLUTUANTE ---
 def obter_menu_principal():
-    """Retorna a instrução para remover o teclado da tela."""
+    """Remove qualquer teclado persistente da tela do usuário."""
     return ReplyKeyboardRemove()
 
 
@@ -123,7 +123,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- TECLADO E LÓGICA COMERCIAL DE PLANOS ---
 async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
-    """Gera os botões verificando se usou_degustacao está True no Supabase."""
+    """Gera os botões de planos verificando se a degustação foi usada no Supabase."""
     ja_usou_degustacao = False
 
     try:
@@ -173,10 +173,11 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
 
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe o menu de planos adaptado para Degustação, Cortesia, Pago ou Sem Plano."""
+    """Exibe o menu de planos adaptado para Degustação, Cortesia VIP, Pago ou Sem Plano."""
     user_id = update.effective_user.id
     chat_id_str = str(user_id)
 
+    # 1. Consulta a assinatura no Supabase
     try:
         res = supabase.table("assinaturas").select("*").eq("chat_id", chat_id_str).execute()
         dados = res.data
@@ -191,17 +192,23 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_ativo = status_bruto == "ativo" or (tipo_plano == "degustacao" and usou_degustacao)
 
+    # CENÁRIO 1: Usuário em Degustação Ativa
     if is_ativo and tipo_plano == "degustacao":
-        teclado = await obter_menu_planos(user_id)
         texto = (
             "🎁 <b>Você está utilizando o Plano Degustação (Grátis)!</b>\n\n"
             "Seu período de teste está <b>ativo</b> no AlertaSUS.\n"
             "• <b>Limite Atual:</b> Até 2 regulações cadastradas\n\n"
-            "💡 <i>Aproveite para testar a plataforma ou selecione um dos planos Pro abaixo para ampliar seu limite de monitoramentos:</i>"
+            "💡 <i>Se desejar ampliar seu limite de monitoramentos, consulte nossos planos Pro abaixo:</i>"
         )
+        teclado = await obter_menu_planos(user_id)
 
+    # CENÁRIO 2: Usuário com Cortesia VIP ou Plano Pago (Semestral/Anual)
     elif is_ativo and tipo_plano != "degustacao":
-        tipo_formatado = "Cortesia VIP" if tipo_plano == "cortesia" else f"Pro ({tipo_plano.capitalize()})"
+        if tipo_plano == "cortesia":
+            tipo_formatado = "Cortesia VIP 👑"
+        else:
+            tipo_formatado = f"Pro ({tipo_plano.capitalize()})"
+
         limite = plano_info.get("limite_ids", "Ilimitado")
 
         texto = (
@@ -211,19 +218,19 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• <b>Limite de Monitoramentos:</b> {limite}\n\n"
             "Você já conta com acesso completo para acompanhar suas consultas e exames!"
         )
-
         teclado = InlineKeyboardMarkup([
             [InlineKeyboardButton("💬 Suporte", url="https://t.me/seu_suporte")]
         ])
 
+    # CENÁRIO 3: Sem plano / Visitante
     else:
-        teclado = await obter_menu_planos(user_id)
         texto = (
             "💳 <b>Planos e Assinaturas — AlertaSUS</b>\n\n"
             "Acompanhe suas consultas e exames sem preocupações. Escolha o plano ideal "
             "para você e receba notificações instantâneas no seu Telegram assim que sua regulação andar!\n\n"
             "<i>Selecione uma das opções abaixo para ver mais detalhes:</i>"
         )
+        teclado = await obter_menu_planos(user_id)
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -237,7 +244,7 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ativa a degustação e atualiza usou_degustacao=True ou exibe opções de pagamento."""
+    """Ativa a degustação ou exibe opções de pagamento via Pix."""
     query = update.callback_query
     try:
         await query.answer()
@@ -259,13 +266,13 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 },
                 on_conflict="chat_id",
             ).execute()
-            logger.info(f"✅ Degustação ativada e marcada no Supabase para: {telegram_id}")
+            logger.info(f"✅ Degustação ativada no Supabase para: {telegram_id}")
         except Exception as err:
             logger.error(f"❌ Erro ao gravar degustação no Supabase: {err}")
 
         texto = (
             "🎁 <b>Plano Degustação Ativado!</b>\n\n"
-            "Seu período de teste gratuito de 7 dias já está funcionando.\n\n"
+            "Seu período de teste gratuito já está funcionando.\n\n"
             "• <b>Status:</b> Ativo\n"
             "• <b>Capacidade:</b> Até 2 regulações cadastradas\n"
             "• <b>Alertas:</b> Notificações diretas no Telegram\n\n"
