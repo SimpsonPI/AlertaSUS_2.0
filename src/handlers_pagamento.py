@@ -22,11 +22,13 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.answer()
         user_id = query.from_user.id
         first_name = query.from_user.first_name or "Usuario"
+        last_name = query.from_user.last_name or "AlertaSUS"
         plano_chave = query.data.replace("pix_", "")
         chat_id = query.message.chat_id
     else:
         user_id = update.effective_user.id
         first_name = update.effective_user.first_name or "Usuario"
+        last_name = update.effective_user.last_name or "AlertaSUS"
         plano_chave = context.args[0].lower() if context.args else "pro_mensal"
         chat_id = update.effective_chat.id
 
@@ -35,12 +37,13 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
     valor = detalhes_plano["valor"]
 
     payment_data = {
-        "transaction_amount": valor,
+        "transaction_amount": float(valor),
         "description": f"AlertaSUS 2.0 - {nome_plano}",
         "payment_method_id": "pix",
         "payer": {
             "email": f"user_{user_id}@alertasus.com",
             "first_name": first_name,
+            "last_name": last_name
         },
         "external_reference": str(user_id)
     }
@@ -48,7 +51,15 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         result = sdk.payment().create(payment_data)
         
-        if result.get("status") != 201:
+        # 👇 DIAGNÓSTICO: Log detalhado do retorno da API para ver no Railway
+        print("--------------------------------------------------")
+        print("LOG MERCADO PAGO STATUS CODE:", result.get("status"))
+        print("LOG MERCADO PAGO RESPONSE:", result.get("response"))
+        print("--------------------------------------------------")
+        
+        if result.get("status") not in [200, 201]:
+            erro_mp = result.get("response", {})
+            print("❌ ERRO DETALHADO DO MERCADO PAGO:", erro_mp.get("message"), erro_mp.get("cause"))
             await context.bot.send_message(chat_id=chat_id, text="❌ Erro ao gerar o pagamento no Mercado Pago. Tente novamente em instantes.")
             return
 
@@ -102,7 +113,7 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
     except Exception as e:
-        print(f"Erro ao processar pagamento Pix: {e}")
+        print(f"❌ EXCEÇÃO AO GERAR PIX: {e}")
         await context.bot.send_message(
             chat_id=chat_id,
             text="❌ Ocorreu um erro inesperado ao gerar a cobrança Pix. Tente novamente em instantes."
