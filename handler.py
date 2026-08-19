@@ -177,38 +177,34 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id_str = str(user_id)
 
-    # 1. Consulta a assinatura no Supabase
+    # Consulta a assinatura no Supabase ordenando pela alteração mais recente
     try:
-        res = supabase.table("assinaturas").select("*").eq("chat_id", chat_id_str).execute()
-        dados = res.data
+        res = (
+            supabase.table("assinaturas")
+            .select("*")
+            .eq("chat_id", chat_id_str)
+            .order("created_at", desc=True) if hasattr(supabase, "order") else 
+            supabase.table("assinaturas").select("*").eq("chat_id", chat_id_str).execute()
+        )
+        dados = res.data if hasattr(res, "data") else []
     except Exception as e:
         logger.error(f"Erro ao consultar assinaturas para {chat_id_str}: {e}")
         dados = []
 
     plano_info = dados[0] if dados else {}
-    status_bruto = str(plano_info.get("status", "")).lower()
-    tipo_plano = str(plano_info.get("tipo_plano", "")).lower()
+    
+    # Tratamento flexível de caixa alta/baixa e espaços
+    status_bruto = str(plano_info.get("status", "")).strip().lower()
+    tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
     usou_degustacao = plano_info.get("usou_degustacao", False)
 
-    is_ativo = status_bruto == "ativo" or (tipo_plano == "degustacao" and usou_degustacao)
+    # REGRA FIXA: Se for 'cortesia', é considerado ATIVO automaticamente
+    is_cortesia = tipo_plano == "cortesia"
+    is_ativo = is_cortesia or status_bruto == "ativo" or (tipo_plano == "degustacao" and usou_degustacao)
 
-    # CENÁRIO 1: Usuário em Degustação Ativa
-    if is_ativo and tipo_plano == "degustacao":
-        texto = (
-            "🎁 <b>Você está utilizando o Plano Degustação (Grátis)!</b>\n\n"
-            "Seu período de teste está <b>ativo</b> no AlertaSUS.\n"
-            "• <b>Limite Atual:</b> Até 2 regulações cadastradas\n\n"
-            "💡 <i>Se desejar ampliar seu limite de monitoramentos, consulte nossos planos Pro abaixo:</i>"
-        )
-        teclado = await obter_menu_planos(user_id)
-
-    # CENÁRIO 2: Usuário com Cortesia VIP ou Plano Pago (Semestral/Anual)
-    elif is_ativo and tipo_plano != "degustacao":
-        if tipo_plano == "cortesia":
-            tipo_formatado = "Cortesia VIP 👑"
-        else:
-            tipo_formatado = f"Pro ({tipo_plano.capitalize()})"
-
+    # CENÁRIO 1: Cortesia VIP ou Plano Pago
+    if is_ativo and tipo_plano != "degustacao":
+        tipo_formatado = "Cortesia VIP 👑" if is_cortesia else f"Pro ({tipo_plano.capitalize()})"
         limite = plano_info.get("limite_ids", "Ilimitado")
 
         texto = (
@@ -218,11 +214,19 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• <b>Limite de Monitoramentos:</b> {limite}\n\n"
             "Você já conta com acesso completo para acompanhar suas consultas e exames!"
         )
-        teclado = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Suporte", url="https://t.me/seu_suporte")]
-        ])
+        teclado = None
 
-    # CENÁRIO 3: Sem plano / Visitante
+    # CENÁRIO 2: Plano Degustação
+    elif is_ativo and tipo_plano == "degustacao":
+        texto = (
+            "🎁 <b>Você está utilizando o Plano Degustação (Grátis)!</b>\n\n"
+            "Seu período de teste está <b>ativo</b> no AlertaSUS.\n"
+            "• <b>Limite Atual:</b> Até 2 regulações cadastradas\n\n"
+            "💡 <i>Se desejar ampliar seu limite de monitoramentos, consulte nossos planos Pro abaixo:</i>"
+        )
+        teclado = await obter_menu_planos(user_id)
+
+    # CENÁRIO 3: Sem Plano / Expirado
     else:
         texto = (
             "💳 <b>Planos e Assinaturas — AlertaSUS</b>\n\n"
@@ -234,13 +238,9 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(
-            texto, parse_mode="HTML", reply_markup=teclado
-        )
+        await update.callback_query.edit_message_text(texto, parse_mode="HTML", reply_markup=teclado)
     else:
-        await update.message.reply_text(
-            texto, parse_mode="HTML", reply_markup=teclado
-        )
+        await update.message.reply_text(texto, parse_mode="HTML", reply_markup=teclado)
 
 
 async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
