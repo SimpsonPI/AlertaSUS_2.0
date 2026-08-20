@@ -7,7 +7,20 @@ from database import supabase
 # Leitura dos IDs de administradores
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 
+from config import ADMIN_ID
+from functools import wraps
 
+def eh_admin(func):
+    @wraps(func)
+    async def wrapper(update, context, *args, **kwargs):
+        user_id = update.effective_user.id
+        if user_id != ADMIN_ID:
+            await update.message.reply_text("⛔ Acesso negado: você não é um administrador.")
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapper
+
+@eh_admin
 async def comando_conceder_cortesia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 

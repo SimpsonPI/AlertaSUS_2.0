@@ -32,8 +32,7 @@ from database import (
     desativar_regulacoes_por_chat_id,
     supabase,
 )
-from handlers_cadastro import (
-    finalizar_cadastro,
+from handler_cadastro import (
     iniciar_cadastro_manual,
     receber_cbo,
     receber_celular,
@@ -42,15 +41,17 @@ from handlers_cadastro import (
     receber_procedimento,
     receber_regulacao,
     receber_sus,
+    finalizar_cadastro,  # <-- Adicione esta linha no bloco de importação
 )
-from handlers_consultas import (
+
+from handler_consultas import (
     cancelar_operacao,
     comando_ajuda,
     comando_verificar_todas,
     iniciar_verificar_especifico,
     processar_verificar_especifico,
 )
-from handlers_gestao import (
+from handler_gestao import (
     confirmar_exclusao_callback,
     iniciar_corrigir,
     iniciar_excluir,
@@ -143,6 +144,7 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
                     break
     except Exception as e:
         logger.error(f"Erro ao verificar degustação no Supabase: {e}")
+        ja_usou_degustacao = True  # Fallback de segurança em caso de erro na conexão
 
     keyboard = []
 
@@ -171,39 +173,53 @@ async def obter_menu_planos(user_id: int) -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(keyboard)
 
+def usuario_tem_acesso(plano_info: dict) -> bool:
+    """Valida se o usuário possui acesso liberado (Cortesia, Degustação ou Pago)."""
+    status_bruto = str(plano_info.get("status", "")).strip().lower()
+    tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
+    usou_degustacao = plano_info.get("usou_degustacao", False)
+
+    is_cortesia = tipo_plano == "cortesia"
+    is_degustacao = tipo_plano == "degustacao"
+
+    return (
+        is_cortesia
+        or (is_degustacao and (usou_degustacao or status_bruto == "ativo"))
+        or (status_bruto == "ativo")
+    )
+
 
 async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exibe o menu de planos adaptado para Degustação, Cortesia VIP, Pago ou Sem Plano."""
     user_id = update.effective_user.id
     chat_id_str = str(user_id)
 
-    # Consulta a assinatura no Supabase ordenando pela alteração mais recente
+    # Consulta a assinatura no Supabase ordenando do mais recente para o mais antigo
     try:
         res = (
             supabase.table("assinaturas")
             .select("*")
             .eq("chat_id", chat_id_str)
-            .order("created_at", desc=True) if hasattr(supabase, "order") else 
-            supabase.table("assinaturas").select("*").eq("chat_id", chat_id_str).execute()
+            .order("created_at", desc=True)
+            .execute()
         )
-        dados = res.data if hasattr(res, "data") else []
+        dados = res.data if res and hasattr(res, "data") else []
     except Exception as e:
         logger.error(f"Erro ao consultar assinaturas para {chat_id_str}: {e}")
         dados = []
 
     plano_info = dados[0] if dados else {}
     
-    # Tratamento flexível de caixa alta/baixa e espaços
-    status_bruto = str(plano_info.get("status", "")).strip().lower()
+    # Tratamento flexível de variáveis
     tipo_plano = str(plano_info.get("tipo_plano", "")).strip().lower()
-    usou_degustacao = plano_info.get("usou_degustacao", False)
-
-    # REGRA FIXA: Se for 'cortesia', é considerado ATIVO automaticamente
     is_cortesia = tipo_plano == "cortesia"
-    is_ativo = is_cortesia or status_bruto == "ativo" or (tipo_plano == "degustacao" and usou_degustacao)
+    is_degustacao = tipo_plano == "degustacao"
 
-    # CENÁRIO 1: Cortesia VIP ou Plano Pago
-    if is_ativo and tipo_plano != "degustacao":
+    # Usa a função centralizada que criamos
+    is_ativo = usuario_tem_acesso(plano_info)
+
+    # CENÁRIO 1: Cortesia VIP ou Plano Pago Ativo
+    if is_ativo and not is_degustacao:
         tipo_formatado = "Cortesia VIP 👑" if is_cortesia else f"Pro ({tipo_plano.capitalize()})"
         limite = plano_info.get("limite_ids", "Ilimitado")
 
@@ -216,8 +232,8 @@ async def comando_planos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         teclado = None
 
-    # CENÁRIO 2: Plano Degustação
-    elif is_ativo and tipo_plano == "degustacao":
+    # CENÁRIO 2: Plano Degustação Ativo
+    elif is_ativo and is_degustacao:
         texto = (
             "🎁 <b>Você está utilizando o Plano Degustação (Grátis)!</b>\n\n"
             "Seu período de teste está <b>ativo</b> no AlertaSUS.\n"
@@ -316,47 +332,6 @@ async def detalhar_plano(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=texto,
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(keyboard_botoes),
-    )
-
-
-async def processar_pix_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-):
-    """Exibe os detalhes de pagamento via Pix e o link do WhatsApp comercial."""
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    chave_pix = "86994083113"
-
-    if data == "pix_pro_semestral":
-        valor = "R$ 9,99"
-        plano = "Semestral"
-    else:
-        valor = "R$ 14,99"
-        plano = "Anual"
-
-    texto = (
-        f"💳 <b>Pagamento via Pix — Plano {plano}</b>\n\n"
-        f"<b>Valor:</b> {valor}\n"
-        f"<b>Chave Pix (Celular):</b> <code>{chave_pix}</code>\n\n"
-        "Após realizar o pagamento, envie o comprovante para o nosso suporte no WhatsApp para ativação imediata!"
-    )
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "💬 Enviar Comprovante no WhatsApp",
-                url="https://wa.me/5586994083113",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "⬅️ Voltar aos Planos", callback_data="planos"
-            )
-        ],
-    ]
-    await query.edit_message_text(
-        texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -789,3 +764,40 @@ __all__ = [
     "detalhar_plano",
     "processar_pix_callback",
 ]
+
+async def callback_ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Responde ao clique no botão Ajuda com o script da Central de Atendimento Automatizado."""
+    query = update.callback_query
+    await query.answer()
+
+    # Script de atendimento corrigido
+    script_atendimento = (
+        "🤖 <b>Central de Atendimento Automatizado — AlertaSUS</b>\n\n"
+        "Seja bem-vindo(a) ao suporte do AlertaSUS! Nosso sistema automatizado está pronto "
+        "para auxiliar você com rapidez e precisão.\n\n"
+        "📌 <b>O que você pode fazer por aqui?</b>\n"
+        "• Consultar o status das suas regulações ativas.\n"
+        "• Tirar dúvidas sobre planos e renovação de assinatura.\n"
+        "• Obter orientações sobre a consulta via Cartão SUS ou ID da Regulação.\n"
+        "• Notificar divergências ou solicitar suporte técnico no sistema.\n\n"
+        "💡 <b>Como iniciar?</b>\n"
+        "Acesse nossa central dedicada abaixo para ser atendido pelo nosso assistente:"
+    )
+
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "🤖 Central de Atendimento ao Usuário AlertaSUS 2.0",
+                url="https://t.me/AlertaSUS_Atendimento_ao_Usuario"
+            )
+        ],
+        [InlineKeyboardButton("⬅️ Voltar", callback_data="voltar_inicio")]
+    ])
+
+    await query.edit_message_text(
+        script_atendimento,
+        parse_mode="HTML",
+        reply_markup=teclado
+    )
+
+    

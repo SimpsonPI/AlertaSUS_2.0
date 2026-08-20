@@ -241,6 +241,10 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             await query.answer()
             data = query.data
 
+            # Se o botão clicado for de Pix ou outro menu, ignora a consulta para não dar erro
+            if data.startswith("pix_") or data.startswith("plano_") or data == "planos":
+                return ConversationHandler.END
+
             if data == "cancelar_ver_esp":
                 await query.edit_message_text("❌ Consulta cancelada.")
                 await query.message.reply_text("Menu principal:", reply_markup=TECLADO_MENU)
@@ -256,27 +260,16 @@ async def processar_verificar_especifico(update: Update, context: ContextTypes.D
             num_reg = re.sub(r"\D", "", update.message.text.strip())
 
         if not num_reg:
+            # Se não veio de um clique de regulação, encerra silenciosamente em vez de acusar erro de ID
+            if query and not data.startswith("ver_esp_"):
+                return ConversationHandler.END
+                
             msg_erro = "⚠️ Não foi possível identificar o ID da regulação. Digite apenas os números:"
             if query: 
                 await query.edit_message_text(msg_erro)
             else: 
                 await update.message.reply_text(msg_erro, reply_markup=TECLADO_CANCELAR)
             return CONSULTAR_ID
-
-        # 1. Atualiza visualmente informando o início da consulta
-        msg_espera = f"⌛ <b>Consultando a regulação</b> <code>{escape(num_reg)}</code> na FMS... Por favor, aguarde."
-        if query: 
-            await query.edit_message_text(msg_espera, parse_mode="HTML")
-        else: 
-            msg_status = await update.message.reply_text(msg_espera, parse_mode="HTML")
-
-        # 2. Realiza as buscas
-        reg_db = await _buscar_regulacao_por_id_reg(num_reg)
-        try: 
-            resultado = await consultar_status_fms(num_reg)
-        except Exception as e: 
-            logger.error(f"Erro na consulta FMS: {e}")
-            resultado = {"sucesso": False}
 
         # 3. Formata a mensagem de resposta
         msg_html = _montar_msg_html(num_reg, resultado, reg_db)

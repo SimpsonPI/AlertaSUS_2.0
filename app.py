@@ -1,16 +1,10 @@
 import streamlit as st
-
-st.title("Painel Ativado com Sucesso!")
-st.write("Este é o seu novo dashboard Streamlit.")
-opcao = st.selectbox("Escolha uma opção:", ["Opção A", "Opção B"])
-st.write(f"Você selecionou: {opcao}")
-import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
 # 1. Configuração da Página
 st.set_page_config(
-    page_title="AlertaSUS 2.0 - Painel",
+    page_title="AlertaSUS 2.0 - Central de Controle",
     page_icon="🏥",
     layout="wide"
 )
@@ -28,25 +22,24 @@ except Exception as e:
     st.error(f"Erro ao conectar no Supabase: {e}")
     st.stop()
 
-# 3. Busca e Tratamento dos Dados
-@st.cache_data(ttl=30)
-def carregar_dados():
-    # Substitua 'regulacoes' abaixo caso o nome da tabela no menu esquerdo do Supabase seja outro
-    response = supabase.table("AlertaSUS_2.0").select("*").execute()
-    df = pd.DataFrame(response.data)
-
-    if not df.empty:
-        # Formatação das datas para o padrão brasileiro DD/MM/AAAA
-        if "data_nascimento" in df.columns:
-            df["data_nascimento"] = pd.to_datetime(df["data_nascimento"], errors="coerce").dt.strftime("%d/%m/%Y")
+# Função genérica para carregar qualquer tabela do Supabase
+def carregar_tabela(nome_tabela):
+    try:
+        response = supabase.table(nome_tabela).select("*").execute()
+        df = pd.DataFrame(response.data)
         
-        if "created_at" in df.columns:
-            df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+        # Tratamento de datas se existirem colunas de data comuns
+        for col in ["created_at", "data_assinatura", "data_pagamento"]:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
+                
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar a tabela {nome_tabela}: {e}")
+        return pd.DataFrame()
 
-    return df
-
-# --- TÍTULO E BOTÃO DE ATUALIZAR ---
-st.title("🏥 AlertaSUS 2.0 — Painel de Pacientes")
+# --- TÍTULO E BOTÃO DE ATUALIZAR GERAL ---
+st.title("🏥 AlertaSUS 2.0 — Central de Controle Total")
 
 col_btn1, col_btn2 = st.columns([8, 2])
 with col_btn2:
@@ -54,42 +47,80 @@ with col_btn2:
         st.cache_data.clear()
         st.rerun()
 
-df = carregar_dados()
+st.markdown("---")
 
-if df.empty:
-    st.warning("Nenhum registro encontrado ou a tabela está sem permissão de leitura (RLS).")
-else:
-    # --- INDICADORES (KPIs) ---
-    st.markdown("---")
-    kpi1, kpi2, kpi3 = st.columns(3)
+# --- CRIAÇÃO DAS ABAS (TABS) PARA CADA TABELA DO SUPABASE ---
+aba_regulacoes, aba_assinaturas, aba_lgpd, aba_pix = st.tabs([
+    "📋 Regulações (AlertaSUS_2.0)", 
+    "💳 Assinaturas", 
+    "🛡️ LGPD Consentimentos", 
+    "💰 Pagamentos PIX"
+])
+
+# ==========================================
+# ABA 1: REGULAÇÕES (AlertaSUS_2.0)
+# ==========================================
+with aba_regulacoes:
+    st.subheader("Gerenciamento de Regulações")
+    df_reg = carregar_tabela("AlertaSUS_2.0")
     
-    kpi1.metric("Total de Registros", len(df))
-    kpi2.metric("Pacientes Únicos", df["nome_paciente"].nunique() if "nome_paciente" in df.columns else 0)
-    kpi3.metric("Números de Regulação", df["numero_reg"].nunique() if "numero_reg" in df.columns else 0)
+    if df_reg.empty:
+        st.warning("Nenhum registro encontrado na tabela de regulações.")
+    else:
+        # Métricas rápidas
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("Total de Registros", len(df_reg))
+        kpi2.metric("Pacientes Únicos", df_reg["nome_paciente"].nunique() if "nome_paciente" in df_reg.columns else 0)
+        kpi3.metric("Números de Regulação", df_reg["numero_reg"].nunique() if "numero_reg" in df_reg.columns else 0)
 
-    # --- FILTROS DE BUSCA ---
-    st.sidebar.header("🔍 Filtros")
-    busca_nome = st.sidebar.text_input("Buscar por Nome do Paciente:")
-    busca_reg = st.sidebar.text_input("Buscar por Nº Regulação:")
+        # Filtros laterais ou na tela
+        b1, b2 = st.columns(2)
+        busca_nome = b1.text_input("Filtrar por Nome do Paciente:")
+        busca_reg = b2.text_input("Filtrar por Nº Regulação:")
 
-    df_filtrado = df.copy()
+        df_reg_filtrado = df_reg.copy()
+        if busca_nome:
+            df_reg_filtrado = df_reg_filtrado[df_reg_filtrado["nome_paciente"].astype(str).str.contains(busca_nome, case=False, na=False)]
+        if busca_reg:
+            df_reg_filtrado = df_reg_filtrado[df_reg_filtrado["numero_reg"].astype(str).str.contains(busca_reg, case=False, na=False)]
 
-    if busca_nome:
-        df_filtrado = df_filtrado[df_filtrado["nome_paciente"].astype(str).str.contains(busca_nome, case=False, na=False)]
+        st.dataframe(df_reg_filtrado, use_container_width=True, hide_index=True)
 
-    if busca_reg:
-        df_filtrado = df_filtrado[df_filtrado["numero_reg"].astype(str).str.contains(busca_reg, case=False, na=False)]
+# ==========================================
+# ABA 2: ASSINATURAS
+# ==========================================
+with aba_assinaturas:
+    st.subheader("Gerenciamento de Assinaturas")
+    df_ass = carregar_tabela("assinaturas")
+    
+    if df_ass.empty:
+        st.info("A tabela de assinaturas está vazia ou sem registros no momento.")
+    else:
+        st.metric("Total de Assinaturas", len(df_ass))
+        st.dataframe(df_ass, use_container_width=True, hide_index=True)
 
-    # --- ORGANIZAÇÃO DA TABELA EXIBIDA ---
-    st.markdown("---")
-    st.subheader("📋 Lista de Regulações Cadastradas")
+# ==========================================
+# ABA 3: LGPD CONSENTIMENTOS
+# ==========================================
+with aba_lgpd:
+    st.subheader("Auditoria de Consentimentos LGPD")
+    df_lgpd = carregar_tabela("lgpd_consentimentos")
+    
+    if df_lgpd.empty:
+        st.info("Nenhum registro de consentimento LGPD encontrado.")
+    else:
+        st.metric("Total de Consentimentos Registrados", len(df_lgpd))
+        st.dataframe(df_lgpd, use_container_width=True, hide_index=True)
 
-    # Organiza a ordem das colunas para melhor leitura
-    colunas_ordem = ["id", "nome_paciente", "numero_reg", "data_nascimento", "status_anterior", "celular", "email", "created_at"]
-    colunas_existentes = [col for col in colunas_ordem if col in df_filtrado.columns]
-
-    st.dataframe(
-        df_filtrado[colunas_existentes],
-        use_container_width=True,
-        hide_index=True
-    )
+# ==========================================
+# ABA 4: PAGAMENTOS PIX
+# ==========================================
+with aba_pix:
+    st.subheader("Histórico e Controle de Pagamentos PIX")
+    df_pix = carregar_tabela("pagamentos_pix")
+    
+    if df_pix.empty:
+        st.info("Nenhum pagamento PIX registrado na tabela.")
+    else:
+        st.metric("Total de Transações PIX", len(df_pix))
+        st.dataframe(df_pix, use_container_width=True, hide_index=True)

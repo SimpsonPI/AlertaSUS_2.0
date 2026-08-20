@@ -4,3 +4,7 @@ beautifulsoup4==4.12.3
 supabase
 python-dotenv==1.0.1
 mercadopago
+streamlit
+starlette<1.4.0
+supabase
+pandas

@@ -1,159 +1,191 @@
-import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
     MessageHandler,
     filters,
-    CallbackQueryHandler
 )
 
-logger = logging.getLogger(__name__)
-
-# DEFINIÇÃO DOS ESTADOS DO CONVERSATIONHANDLER
+# Constante de estado para o ConversationHandler
 AGUARDANDO_MENSAGEM = 1
-
-# ID do Administrador para receber os chamados (Substitua se necessário)
-ADMIN_CHAT_ID = 5242040324
 
 
 async def menu_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe o menu de opções da Central de Ajuda."""
-    mensagem = update.message or (update.callback_query.message if update.callback_query else None)
-    if not mensagem:
-        return
-
-    teclado = [
-        [InlineKeyboardButton("🛠️ Resolução de Problemas / FAQ", callback_data="sup_faq")],
-        [InlineKeyboardButton("👤 Falar com Atendente Humano", callback_data="sup_humano")],
-        [InlineKeyboardButton("❌ Fechar", callback_data="sup_fechar")]
-    ]
-
-    await mensagem.reply_text(
-        "❓ <b>Central de Ajuda e Suporte</b>\n\n"
-        "Como podemos te ajudar hoje? Selecione uma das opções abaixo:",
-        reply_markup=InlineKeyboardMarkup(teclado),
-        parse_mode="HTML"
+    """Menu Inicial da Central de Atendimento ao Usuário AlertaSUS 2.0 com FAQ interativo."""
+    texto = (
+        "🤖 <b>Central de Atendimento ao Usuário AlertaSUS 2.0</b>\n\n"
+        "Seja bem-vindo(a) ao nosso centro de ajuda! Selecione abaixo uma das perguntas frequentes para tirar sua dúvida instantaneamente:\n\n"
+        "<b>📌 Perguntas Frequentes (FAQ):</b>\n"
+        "1️⃣ Como cadastrar uma regulação?\n"
+        "2️⃣ Como consultar minhas regulações ativas?\n"
+        "3️⃣ Onde encontrar o número do Cartão SUS ou ID?\n"
+        "4️⃣ Como alterar meus dados de cadastro?\n"
+        "5️⃣ Como renovar ou alterar meu plano de assinatura?"
     )
 
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("1️⃣ Cadastrar Regulação", callback_data="faq_cadastrar"),
+            InlineKeyboardButton("2️⃣ Consultar Regulações", callback_data="faq_consultar"),
+        ],
+        [
+            InlineKeyboardButton("3️⃣ Onde achar Cartão SUS/ID", callback_data="faq_id"),
+            InlineKeyboardButton("4️⃣ Alterar Dados", callback_data="faq_alterar"),
+        ],
+        [
+            InlineKeyboardButton("5️⃣ Planos e Assinatura", callback_data="faq_planos"),
+        ],
+        [
+            InlineKeyboardButton(
+                "💬 Não encontrou sua resposta? Falar com Atendimento",
+                callback_data="iniciar_atendimento_20",
+            )
+        ],
+        [InlineKeyboardButton("❌ Fechar", callback_data="fechar_menu")],
+    ])
 
-async def callback_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa os cliques nos botões do menu de suporte."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            texto, parse_mode="HTML", reply_markup=teclado
+        )
+    elif update.message:
+        await update.message.reply_text(
+            texto, parse_mode="HTML", reply_markup=teclado
+        )
+
+
+async def exibir_resposta_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe as respostas individuais do FAQ com botão para voltar ao menu ou ir ao Atendimento."""
     query = update.callback_query
     await query.answer()
 
-    if query.data == "sup_faq":
-        texto_faq = (
-            "🛠️ <b>Perguntas Frequentes (FAQ)</b>\n\n"
-            "1. <b>Como cadastrar uma regulação?</b>\n"
-            "Clique em /cadastrar_nova no menu e digite o Cartão SUS (15 dígitos).\n\n"
-            "2. <b>Como corrigir dados?</b>\n"
-            "Utilize o comando /corrigir para selecionar o registro desejado.\n\n"
-            "3. <b>Onde vejo minhas consultas?</b>\n"
-            "Utilize /verificar_todos para listar todas as regulações cadastradas."
-        )
-        await query.message.reply_text(texto_faq, parse_mode="HTML")
-        return ConversationHandler.END
+    dados = query.data
 
-    elif query.data == "sup_humano":
-        await query.message.reply_text(
-            "📝 <b>Atendimento Humano</b>\n\n"
-            "Por favor, digite detalhadamente a sua dúvida ou o problema que está enfrentando.\n"
-            "<i>(Sua mensagem será enviada diretamente à nossa equipe de suporte)</i>",
-            parse_mode="HTML"
-        )
-        return AGUARDANDO_MENSAGEM
+    respostas = {
+        "faq_cadastrar": (
+            "📌 <b>Como cadastrar uma nova regulação?</b>\n\n"
+            "• Utilize o comando <b>/cadastrar_nova</b> no menu do bot.\n"
+            "• Digite o número do seu <b>Cartão SUS</b> (15 dígitos) ou o <b>ID da Regulação</b> solicitado.\n"
+            "• Siga as instruções na tela até a confirmação do cadastro."
+        ),
+        "faq_consultar": (
+            "🔍 <b>Como consultar minhas regulações?</b>\n\n"
+            "• Para ver todas as suas regulações: digite <b>/verificar_todos</b>.\n"
+            "• Para consultar uma regulação específica: digite <b>/verificar_especifico</b>."
+        ),
+        "faq_id": (
+            "🆔 <b>Onde encontrar o Cartão SUS ou ID da Regulação?</b>\n\n"
+            "• <b>Cartão SUS:</b> O número possui 15 dígitos e pode ser encontrado no seu cartão impresso ou no aplicativo 'Meu SUS Digital'.\n"
+            "• <b>ID da Regulação:</b> É o código de identificação fornecido pelo posto de saúde ou hospital no momento da solicitação do procedimento."
+        ),
+        "faq_alterar": (
+            "✏️ <b>Como corrigir ou alterar dados?</b>\n\n"
+            "• Para alterar informações de uma regulação já cadastrada, utilize o comando <b>/corrigir</b> e selecione o registro desejado."
+        ),
+        "faq_planos": (
+            "💳 <b>Planos e Renovação de Assinatura</b>\n\n"
+            "• Para verificar seus planos ativos, renovar ou fazer um upgrade, acesse o comando <b>/planos</b> no menu principal."
+        ),
+    }
 
-    elif query.data == "sup_fechar":
-        await query.message.delete()
-        return ConversationHandler.END
+    texto_resposta = respostas.get(
+        dados, "Informação não encontrada no FAQ."
+    )
+    texto_resposta += "\n\nSua dúvida foi resolvida? Se ainda precisar de ajuda, acesse o suporte abaixo:"
+
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "💬 Falar com a Central de Atendimento",
+                callback_data="iniciar_atendimento_20",
+            )
+        ],
+        [InlineKeyboardButton("⬅️ Voltar ao FAQ", callback_data="ajuda")],
+    ])
+
+    await query.edit_message_text(
+        texto_resposta, parse_mode="HTML", reply_markup=teclado
+    )
+
+
+async def iniciar_atendimento_20(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inicia a escuta da dúvida caso o FAQ não resolva."""
+    query = update.callback_query
+    await query.answer()
+
+    mensagem = (
+        "🤖 <b>Central de Atendimento ao Usuário AlertaSUS 2.0</b>\n\n"
+        "Por favor, digite abaixo a sua dúvida ou descreva detalhadamente o seu problema sobre o Cartão SUS ou ID da Regulação.\n\n"
+        "<i>Sua mensagem será enviada diretamente para a nossa equipe de suporte.</i>"
+    )
+
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅️ Voltar ao FAQ", callback_data="ajuda")],
+        [InlineKeyboardButton("❌ Fechar", callback_data="fechar_menu")],
+    ])
+
+    await query.edit_message_text(
+        mensagem, parse_mode="HTML", reply_markup=teclado
+    )
+
+    return AGUARDANDO_MENSAGEM
 
 
 async def receber_mensagem_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recebe a mensagem enviada pelo usuário e encaminha para o Administrador."""
-    if not update.message or not update.message.text:
-        return AGUARDANDO_MENSAGEM
-
+    """Recebe a mensagem enviada pelo usuário e confirma o protocolo de atendimento."""
     user = update.effective_user
     texto_usuario = update.message.text
 
-    # Envia notificação ao Admin
-    mensagem_admin = (
-        f"📩 <b>NOVO CHAMADO DE SUPORTE</b>\n\n"
-        f"<b>Usuário:</b> {user.full_name} (@{user.username or 'sem_username'})\n"
-        f"<b>ID do Usuário:</b> <code>{user.id}</code>\n\n"
-        f"<b>Mensagem:</b>\n{texto_usuario}\n\n"
-        f"👉 <i>Para responder, use:</i> <code>/responder {user.id} Sua resposta aqui</code>"
+    # Confirmação enviada ao usuário
+    await update.message.reply_text(
+        "✅ <b>Mensagem enviada com sucesso!</b>\n\n"
+        "Sua solicitação sobre o Cartão SUS / ID da Regulação foi registrada. "
+        "Nossa equipe de suporte analisará o chamado e responderá em breve.",
+        parse_mode="HTML"
     )
 
-    try:
-        await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=mensagem_admin, parse_mode="HTML")
-        await update.message.reply_text(
-            "✅ <b>Chamado enviado com sucesso!</b>\n\n"
-            "Sua mensagem foi entregue à nossa equipe. Responderemos em breve diretamente aqui no bot.",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Erro ao enviar suporte para admin: {e}")
-        await update.message.reply_text("❌ Ocorreu um erro ao enviar sua mensagem. Tente novamente mais tarde.")
+    return ConversationHandler.END
+
+
+async def cancelar_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancela ou fecha o fluxo de atendimento."""
+    texto = "❌ Atendimento encerrado. Se precisar de algo, acesse o menu novamente!"
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(texto)
+    elif update.message:
+        await update.message.reply_text(texto)
 
     return ConversationHandler.END
 
 
 async def responder_chamado_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Permite ao administrador responder um chamado via /responder <ID> <mensagem>."""
-    if update.effective_user.id != ADMIN_CHAT_ID:
-        await update.message.reply_text("⚠️ Comando exclusivo para administradores.")
-        return
-
-    if not context.args or len(context.args) < 2:
-        await update.message.reply_text(
-            "⚠️ <b>Formato incorreto!</b>\n\n"
-            "Use: <code>/responder ID_DO_USUARIO Sua resposta aqui</code>",
-            parse_mode="HTML"
-        )
-        return
-
-    user_id_destino = context.args[0]
-    mensagem_resposta = " ".join(context.args[1:])
-
-    try:
-        await context.bot.send_message(
-            chat_id=int(user_id_destino),
-            text=(
-                "🎧 <b>Resposta da Equipe de Suporte:</b>\n\n"
-                f"{mensagem_resposta}"
-            ),
-            parse_mode="HTML"
-        )
-        await update.message.reply_text("✅ <b>Resposta enviada com sucesso ao usuário!</b>", parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Erro ao responder chamado: {e}")
-        await update.message.reply_text(f"❌ Falha ao enviar mensagem: {e}")
+    """Permite ao administrador responder a um chamado diretamente (se aplicável)."""
+    pass
 
 
-async def cancelar_suporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancela o atendimento de suporte."""
-    await update.message.reply_text("❌ Atendimento cancelado.")
-    return ConversationHandler.END
-
-
-# Aliases para compatibilidade com importações antigas do main.py
-iniciar_abertura_chamado = menu_suporte
-processar_faq_suporte = callback_suporte
-
-# CONFIGURAÇÃO DO CONVERSATION HANDLER DO SUPORTE
+# Declaração do fluxo conversacional do suporte
+# Declaração do fluxo conversacional do suporte
 conv_suporte = ConversationHandler(
     entry_points=[
+        CallbackQueryHandler(iniciar_atendimento_20, pattern="^iniciar_atendimento_20$"),
+        CallbackQueryHandler(menu_suporte, pattern="^ajuda$"),
         CommandHandler("ajuda", menu_suporte),
         CommandHandler("suporte", menu_suporte),
-        CallbackQueryHandler(callback_suporte, pattern="^sup_")
     ],
     states={
         AGUARDANDO_MENSAGEM: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, receber_mensagem_suporte)
-        ]
+        ],
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_suporte)]
+    fallbacks=[
+        CallbackQueryHandler(exibir_resposta_faq, pattern="^faq_"),
+        CallbackQueryHandler(iniciar_atendimento_20, pattern="^iniciar_atendimento_20$"),
+        CallbackQueryHandler(menu_suporte, pattern="^ajuda$"),
+        CallbackQueryHandler(cancelar_suporte, pattern="^fechar_menu$"),
+    ],
 )

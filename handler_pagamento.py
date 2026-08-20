@@ -62,21 +62,35 @@ async def gerar_pagamento_pix(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.send_message(chat_id=chat_id, text="❌ Erro ao gerar o pagamento no Mercado Pago. Tente novamente em instantes.")
             return
 
-        payment = result["response"]
-        transaction_data = payment["point_of_interaction"]["transaction_data"]
+        # Acesso seguro utilizando .get() em sub-dicionários
+        payment = result.get("response", {})
+        point_of_interaction = payment.get("point_of_interaction", {})
+        transaction_data = point_of_interaction.get("transaction_data", {})
         
-        pix_copia_cola = transaction_data["qr_code"]
+        pix_copia_cola = transaction_data.get("qr_code")
         qr_code_base64 = transaction_data.get("qr_code_base64")
-        mp_payment_id = payment["id"]
+        mp_payment_id = payment.get("id")
 
-        # Registra o Pix na tabela isolada 'pagamentos_pix' sem afetar 'assinaturas'
-        supabase.table("pagamentos_pix").insert({
-            "chat_id": str(user_id),
-            "pix_id": str(mp_payment_id),
-            "valor": float(valor),
-            "tipo_plano": plano_chave,
-            "status": "pending"
-        }).execute()
+        # TRAVA DE SEGURANÇA 1: Validação de presença do código Pix Copia e Cola
+        if not pix_copia_cola or not mp_payment_id:
+            print("❌ ERRO DE SEGURANÇA: Resposta do Mercado Pago sem qr_code ou ID válido.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Não foi possível recuperar os dados do Pix. Por favor, tente novamente em instantes."
+            )
+            return
+
+        # TRAVA DE SEGURANÇA 2: Isolamento do registro no Supabase
+        try:
+            supabase.table("pagamentos_pix").insert({
+                "chat_id": str(user_id),
+                "pix_id": str(mp_payment_id),
+                "valor": float(valor),
+                "tipo_plano": plano_chave,
+                "status": "pending"
+            }).execute()
+        except Exception as e_db:
+            print(f"⚠️ AVISO: Erro ao registrar pagamento na tabela pagamentos_pix: {e_db}")
 
         legenda_mensagem = (
             f"💳 <b>{nome_plano.upper()} - AlertaSUS 2.0</b>\n\n"

@@ -10,6 +10,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+ADMIN_ID = 5242040324
 
 # IDs de Administração
 raw_admin_id = os.getenv("ADMIN_CHAT_ID", "").strip()
